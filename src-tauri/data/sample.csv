@@ -1,0 +1,6 @@
+id,name,lat,lon,category
+1,City Hall,37.7793,-122.4192,government
+2,Market Square,37.7936,-122.3965,retail
+3,Harbor Point,37.8067,-122.4058,transport
+4,North Park,37.7999,-122.4382,park
+5,Museum Annex,37.8006,-122.4586,culture
