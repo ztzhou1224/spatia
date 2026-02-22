@@ -2,6 +2,7 @@ use std::env;
 use std::io::{self, Read};
 
 mod commands;
+use spatia_engine::execute_command;
 
 fn main() {
     if let Err(err) = run() {
@@ -15,10 +16,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if args.is_empty() {
         let mut input = String::new();
         io::stdin().read_to_string(&mut input)?;
-        args = input
-            .split_whitespace()
-            .map(|value| value.to_string())
-            .collect();
+        args = input.split_whitespace().map(str::to_string).collect();
     }
 
     if args.is_empty() || commands::help::is_help_request(&args) {
@@ -26,17 +24,35 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Ok(());
     }
 
-    match args[0].as_str() {
-        "ingest" => {
-            if args.len() != 4 {
-                commands::help::print_help();
-                return Ok(());
-            }
-            commands::ingest::run(&args[1], &args[2], &args[3])?;
-        }
-        _ => {
-            commands::help::print_help();
-        }
+    if !matches!(
+        args[0].as_str(),
+        "ingest"
+            | "schema"
+            | "geocode"
+            | "overture_extract"
+            | "overture_search"
+            | "overture_geocode"
+    ) {
+        commands::help::print_help();
+        return Ok(());
     }
+
+    let command = serialize_command(&args);
+    let output = execute_command(&command)?;
+    println!("{output}");
+
     Ok(())
+}
+
+fn serialize_command(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.chars().any(char::is_whitespace) {
+                format!("\"{}\"", arg.replace('"', "\\\""))
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
 }

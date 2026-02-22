@@ -1,0 +1,15 @@
+[project]
+name = "spatia-geocoder"
+version = "0.1.0"
+description = "Spatia geocoding sidecar"
+requires-python = ">=3.10"
+dependencies = [
+	"fastapi",
+	"uvicorn",
+	"geopy",
+	"pyinstaller",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

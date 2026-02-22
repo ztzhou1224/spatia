@@ -1,6 +1,26 @@
+mod db_manager;
+mod executor;
+mod geocode;
 mod identifiers;
 mod ingest;
+mod overture;
+mod schema;
 mod types;
 
+pub use db_manager::DbManager;
+pub use executor::execute_command;
+pub use geocode::geocode_batch;
+pub use geocode::geocode_batch_hybrid;
+pub use geocode::GeocodeResult;
+pub use geocode::DEFAULT_GEOCODER_URL;
+pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
+pub use overture::overture_extract_to_table;
+pub use overture::overture_geocode;
+pub use overture::overture_search;
+pub use overture::BBox;
+pub use overture::OVERTURE_RELEASE;
+pub use schema::raw_staging_schema;
+pub use schema::table_schema;
+pub use schema::TableColumn;
 pub use types::EngineResult;
