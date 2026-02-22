@@ -2,12 +2,53 @@
 
 ## System Shape
 
-Spatia is a desktop GIS app with four layers:
+Spatia is a desktop GIS app with four layers plus an MCP server:
 
 1. React/Vite frontend (UI)
 2. Tauri host (desktop runtime + command bridge)
 3. Rust engine crate (data + spatial operations)
 4. Overture data pipeline (DuckDB extraction + PMTiles outputs)
+5. MCP server (`spatia-mcp`) – exposes engine commands as AI-callable tools over stdio
+
+## MCP Server
+
+`spatia_mcp` is a Rust binary crate (`src-tauri/crates/mcp/`) that implements the
+[Model Context Protocol](https://modelcontextprotocol.io/) over JSON-RPC 2.0 on stdin/stdout.
+Any MCP-compatible AI client (Claude Desktop, Cursor, etc.) can connect by launching
+`spatia-mcp` and communicating over newline-delimited JSON.
+
+### Exposed Tools
+
+| Tool               | Underlying engine command                             |
+|--------------------|-------------------------------------------------------|
+| `ingest_csv`       | `ingest <db_path> <csv_path> [table_name]`            |
+| `get_schema`       | `schema <db_path> <table_name>`                       |
+| `geocode`          | `geocode <addr>…`                                     |
+| `overture_extract` | `overture_extract <db> <theme> <type> <bbox> [table]` |
+| `overture_search`  | `overture_search <db> <table> <query> [limit]`        |
+| `overture_geocode` | `overture_geocode <db> <table> <query> [limit]`       |
+
+### Protocol Methods Supported
+
+- `initialize` – negotiates capabilities and returns `serverInfo`
+- `ping` – health-check
+- `tools/list` – returns all tool definitions with JSON Schema inputs
+- `tools/call` – executes a tool and returns `content[{type,text}]`
+- Notifications (no `id`) – silently ignored
+
+### Transport
+Newline-delimited JSON on stdin/stdout (MCP stdio transport).
+
+### MCP Client Config Example (Claude Desktop)
+```json
+{
+  "mcpServers": {
+    "spatia": {
+      "command": "/path/to/spatia-mcp"
+    }
+  }
+}
+```
 
 ## Core Decisions
 

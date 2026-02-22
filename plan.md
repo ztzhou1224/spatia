@@ -94,7 +94,24 @@
 - [ ] Ensure `cargo clippy` has zero warnings after integration.
       Summary: Add Geocodio API backup geocoding path, intensive DuckDB-backed result cache, and cache-first dispatch in the hybrid geocoder.
 
-## Phase 3: The AI Brain (Data Cleaner)
+## Phase 2.9: MCP Server (AI Tool Integration)
+
+- [x] Research Model Context Protocol (JSON-RPC 2.0 over stdio, `initialize` / `tools/list` / `tools/call` methods).
+      Summary: MCP uses newline-delimited JSON-RPC 2.0; tools expose JSON Schema inputs; error codes -32700/-32601/-32602/-32603.
+- [x] Create `src-tauri/crates/mcp/` crate (`spatia_mcp`) with a `spatia-mcp` binary.
+      Summary: Single-file implementation in `src/main.rs`; no new external dependencies (reuses `serde`/`serde_json`/`spatia_engine`).
+- [x] Implement MCP protocol handler: `initialize`, `ping`, `tools/list`, `tools/call`, notification pass-through.
+      Summary: All four methods implemented; notifications (no `id`) silently ignored; proper JSON-RPC error codes returned.
+- [x] Expose all six engine commands as MCP tools: `ingest_csv`, `get_schema`, `geocode`, `overture_extract`, `overture_search`, `overture_geocode`.
+      Summary: Each tool maps arguments to the engine string-command format via `build_command`; tool execution errors returned as `isError: true` content.
+- [x] Add unit tests covering `build_command` for every tool and `handle_line` for every MCP method.
+      Summary: 18 tests all pass; zero clippy warnings.
+- [x] Update `architecture.md` with MCP server section.
+      Summary: Added MCP layer description, tool table, protocol methods, and Claude Desktop config example.
+- [x] Update `plan.md` and `summary.md`.
+      Summary: Recorded new crate path, binary name, and quickstart command.
+
+
 
 - [ ] Add a Gemini client (SDK or REST via `reqwest`) behind a feature flag or config.
 - [ ] Fetch 20 random rows from `raw_staging` and the schema for context.

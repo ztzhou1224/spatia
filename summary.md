@@ -9,6 +9,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 - Frontend: React + TypeScript + Vite
 - Desktop shell: Tauri v2
 - Core data engine: Rust (`src-tauri/crates/engine`)
+- MCP server: Rust (`src-tauri/crates/mcp`) – JSON-RPC 2.0 stdio tool server
 - Data source direction: Overture + DuckDB (in migration)
 - Database: DuckDB + spatial extension
 
@@ -46,6 +47,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 - Rust lint: `cargo clippy --workspace`
 - Tauri dev: `pnpm tauri dev`
 - Tauri build: `pnpm tauri build`
+- MCP server: `cargo run -p spatia_mcp` (reads JSON-RPC from stdin, writes to stdout)
 - Legacy sidecar local run: `python src-python/spatia-geocoder/main.py`
 - Legacy sidecar package: `bash src-python/spatia-geocoder/scripts/package_sidecar.sh`
 
@@ -53,6 +55,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 
 - Engine crate: `src-tauri/crates/engine/src`
 - CLI crate: `src-tauri/crates/cli/src`
+- MCP server crate: `src-tauri/crates/mcp/src`
 - Tauri app: `src-tauri/src`
 - Sidecar app: `src-python/spatia-geocoder/main.py`
 - Tauri config: `src-tauri/tauri.conf.json`
