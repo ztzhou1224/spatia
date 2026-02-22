@@ -15,6 +15,7 @@ enum Command {
         table_name: String,
     },
     Geocode {
+        db_path: String,
         addresses: Vec<String>,
     },
     OvertureExtract {
@@ -65,8 +66,8 @@ pub fn execute_command(command: &str) -> EngineResult<String> {
             let json = serde_json::to_string(&schema)?;
             Ok(json)
         }
-        Command::Geocode { addresses } => {
-            let result = geocode_batch_hybrid(&addresses)?;
+        Command::Geocode { db_path, addresses } => {
+            let result = geocode_batch_hybrid(&addresses, Some(&db_path))?;
             let json = serde_json::to_string(&result)?;
             Ok(json)
         }
@@ -153,11 +154,12 @@ fn parse_schema(tokens: &[String]) -> EngineResult<Command> {
 }
 
 fn parse_geocode(tokens: &[String]) -> EngineResult<Command> {
-    if tokens.len() < 2 {
-        return Err("Usage: geocode <address_1> <address_2> ...".into());
+    if tokens.len() < 3 {
+        return Err("Usage: geocode <db_path> <address_1> <address_2> ...".into());
     }
-    let addresses = tokens[1..].to_vec();
-    Ok(Command::Geocode { addresses })
+    let db_path = tokens[1].clone();
+    let addresses = tokens[2..].to_vec();
+    Ok(Command::Geocode { db_path, addresses })
 }
 
 fn parse_overture_extract(tokens: &[String]) -> EngineResult<Command> {
@@ -289,10 +291,13 @@ mod tests {
 
     #[test]
     fn parse_geocode_with_quoted_addresses() {
-        let command = parse_command("geocode \"San Francisco, CA\" 'New York, NY'").expect("parse");
+        let command =
+            parse_command("geocode ./spatia.duckdb \"San Francisco, CA\" 'New York, NY'")
+                .expect("parse");
         assert_eq!(
             command,
             Command::Geocode {
+                db_path: "./spatia.duckdb".to_string(),
                 addresses: vec!["San Francisco, CA".to_string(), "New York, NY".to_string()],
             }
         );

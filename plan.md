@@ -80,19 +80,26 @@
 
 ## Phase 2.8: Geocodio API Backup Geocoding with Intensive Caching
 
-- [ ] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
-      Notes: Requires `SPATIA_GEOCODIO_API_KEY` env var. Endpoint: `https://api.geocodio.com/v1.7/geocode?api_key=<key>` (batch POST, up to 10 000 addresses per request).
-- [ ] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
-      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records whether the result came from `sidecar` or `geocodio`.
-- [ ] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
-- [ ] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
-- [ ] Integrate Geocodio as the fallback in `geocode_batch_hybrid`: after the sidecar path fails or returns partial results, call `geocode_via_geocodio` for the remaining addresses, then write all results to the cache.
-- [ ] Wrap the full geocode call path in a cache-first pattern: check cache → sidecar → Geocodio fallback → write cache.
-- [ ] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
-- [ ] Update `executor.rs` so the `geocode` command passes the active DuckDB connection to `geocode_batch_hybrid` for cache access.
-- [ ] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
-- [ ] Ensure `cargo clippy` has zero warnings after integration.
-      Summary: Add Geocodio API backup geocoding path, intensive DuckDB-backed result cache, and cache-first dispatch in the hybrid geocoder.
+- [x] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
+      Summary: Added `geocodio.rs` with typed response deserialization, batch-splitting by `SPATIA_GEOCODIO_BATCH_SIZE`, and unit tests.
+- [x] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
+      Summary: Added `geocode_cache.rs` with `ensure_cache_table` that is idempotent.
+- [x] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
+      Summary: Implemented in `geocode_cache.rs` with parameterized SQL query.
+- [x] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
+      Summary: Implemented in `geocode_cache.rs`; skips entries without resolved coordinates.
+- [x] Integrate Geocodio as the fallback in `geocode_batch_hybrid`: after the sidecar path fails or returns partial results, call `geocode_via_geocodio` for the remaining addresses, then write all results to the cache.
+      Summary: Integrated in updated `geocode.rs`.
+- [x] Wrap the full geocode call path in a cache-first pattern: check cache → sidecar → Geocodio fallback → write cache.
+      Summary: Full cache-first dispatch implemented in `geocode_batch_hybrid`.
+- [x] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
+      Summary: Added 5 cache tests and 2 geocodio unit tests; all pass.
+- [x] Update `executor.rs` so the `geocode` command passes the active DuckDB connection to `geocode_batch_hybrid` for cache access.
+      Summary: `geocode` command now takes `<db_path>` as first arg; executor passes it to `geocode_batch_hybrid`.
+- [x] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
+      Summary: Updated CLI help and confirmed architecture.md already documents both env vars.
+- [x] Ensure `cargo clippy` has zero warnings after integration.
+      Summary: `cargo clippy -p spatia_engine -p spatia_cli` produces zero warnings.
 
 ## Phase 3: The AI Brain (Data Cleaner)
 

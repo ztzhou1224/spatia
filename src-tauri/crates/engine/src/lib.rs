@@ -1,6 +1,8 @@
 mod db_manager;
 mod executor;
 mod geocode;
+mod geocode_cache;
+mod geocodio;
 mod identifiers;
 mod ingest;
 mod overture;
@@ -13,6 +15,8 @@ pub use geocode::geocode_batch;
 pub use geocode::geocode_batch_hybrid;
 pub use geocode::GeocodeResult;
 pub use geocode::DEFAULT_GEOCODER_URL;
+pub use geocode_cache::{cache_lookup, cache_store, ensure_cache_table};
+pub use geocodio::geocode_via_geocodio;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
 pub use overture::overture_extract_to_table;
