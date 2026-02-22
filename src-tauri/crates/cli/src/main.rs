@@ -28,7 +28,6 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         args[0].as_str(),
         "ingest"
             | "schema"
-            | "geocode"
             | "overture_extract"
             | "overture_search"
             | "overture_geocode"

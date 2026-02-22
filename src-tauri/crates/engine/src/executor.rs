@@ -1,5 +1,5 @@
 use crate::{
-    geocode_batch_hybrid, ingest_csv, ingest_csv_to_table, overture_extract_to_table,
+    ingest_csv, ingest_csv_to_table, overture_extract_to_table,
     overture_geocode, overture_search, table_schema, BBox, EngineResult,
 };
 
@@ -13,9 +13,6 @@ enum Command {
     Schema {
         db_path: String,
         table_name: String,
-    },
-    Geocode {
-        addresses: Vec<String>,
     },
     OvertureExtract {
         db_path: String,
@@ -63,11 +60,6 @@ pub fn execute_command(command: &str) -> EngineResult<String> {
         } => {
             let schema = table_schema(&db_path, &table_name)?;
             let json = serde_json::to_string(&schema)?;
-            Ok(json)
-        }
-        Command::Geocode { addresses } => {
-            let result = geocode_batch_hybrid(&addresses)?;
-            let json = serde_json::to_string(&result)?;
             Ok(json)
         }
         Command::OvertureExtract {
@@ -119,7 +111,6 @@ fn parse_command(command: &str) -> EngineResult<Command> {
     match name {
         "ingest" => parse_ingest(&tokens),
         "schema" => parse_schema(&tokens),
-        "geocode" => parse_geocode(&tokens),
         "overture_extract" => parse_overture_extract(&tokens),
         "overture_search" => parse_overture_search(&tokens),
         "overture_geocode" => parse_overture_geocode(&tokens),
@@ -150,14 +141,6 @@ fn parse_schema(tokens: &[String]) -> EngineResult<Command> {
         db_path: tokens[1].clone(),
         table_name: tokens[2].clone(),
     })
-}
-
-fn parse_geocode(tokens: &[String]) -> EngineResult<Command> {
-    if tokens.len() < 2 {
-        return Err("Usage: geocode <address_1> <address_2> ...".into());
-    }
-    let addresses = tokens[1..].to_vec();
-    Ok(Command::Geocode { addresses })
 }
 
 fn parse_overture_extract(tokens: &[String]) -> EngineResult<Command> {
@@ -283,17 +266,6 @@ mod tests {
                 db_path: "./db.duckdb".to_string(),
                 csv_path: "./data.csv".to_string(),
                 table_name: None,
-            }
-        );
-    }
-
-    #[test]
-    fn parse_geocode_with_quoted_addresses() {
-        let command = parse_command("geocode \"San Francisco, CA\" 'New York, NY'").expect("parse");
-        assert_eq!(
-            command,
-            Command::Geocode {
-                addresses: vec!["San Francisco, CA".to_string(), "New York, NY".to_string()],
             }
         );
     }
