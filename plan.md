@@ -78,6 +78,22 @@
 - [x] Add end-to-end acceptance check: `overture_extract -> overture_search` on a sample bbox.
       Summary: Verified command flow against Seattle bbox with release `2026-02-18.0` and confirmed extraction + local search output.
 
+## Phase 2.8: Geocodio API Backup Geocoding with Intensive Caching
+
+- [ ] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
+      Notes: Requires `SPATIA_GEOCODIO_API_KEY` env var. Endpoint: `https://api.geocodio.com/v1.7/geocode?api_key=<key>` (batch POST, up to 10 000 addresses per request).
+- [ ] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
+      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records whether the result came from `sidecar` or `geocodio`.
+- [ ] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
+- [ ] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
+- [ ] Integrate Geocodio as the fallback in `geocode_batch_hybrid`: after the sidecar path fails or returns partial results, call `geocode_via_geocodio` for the remaining addresses, then write all results to the cache.
+- [ ] Wrap the full geocode call path in a cache-first pattern: check cache → sidecar → Geocodio fallback → write cache.
+- [ ] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
+- [ ] Update `executor.rs` so the `geocode` command passes the active DuckDB connection to `geocode_batch_hybrid` for cache access.
+- [ ] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
+- [ ] Ensure `cargo clippy` has zero warnings after integration.
+      Summary: Add Geocodio API backup geocoding path, intensive DuckDB-backed result cache, and cache-first dispatch in the hybrid geocoder.
+
 ## Phase 3: The AI Brain (Data Cleaner)
 
 - [ ] Add a Gemini client (SDK or REST via `reqwest`) behind a feature flag or config.
