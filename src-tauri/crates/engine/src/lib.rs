@@ -10,7 +10,6 @@ mod types;
 pub use db_manager::DbManager;
 pub use executor::execute_command;
 pub use geocode::geocode_batch;
-pub use geocode::geocode_batch_hybrid;
 pub use geocode::GeocodeResult;
 pub use geocode::DEFAULT_GEOCODER_URL;
 pub use ingest::ingest_csv;
