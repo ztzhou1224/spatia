@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { Box, Text, Flex, Checkbox } from "@radix-ui/themes";
+import { SearchWidget } from "../components/SearchWidget";
 
 // BLOCKER: Replace OSM raster tiles with PMTiles vector layers once the engine's
 //   overture_extract + PMTiles precompute workflow produces tile artifacts.
@@ -54,28 +56,41 @@ export function MapPage() {
   }, []);
 
   return (
-    <div className="map-page">
+    <div className="map-wrapper">
       <div ref={containerRef} className="map-container" />
 
+      <SearchWidget mapRef={mapRef} />
+
       {/* Layer panel – wire to real PMTiles/DuckDB layers once backend is ready */}
-      <aside className="map-panel">
-        <h3>Layers</h3>
-        <p className="placeholder-note">
-          {/*
-           * BLOCKER: After an overture_extract run, load the resulting PMTiles
-           * file here using the @maplibre/maplibre-gl-pmtiles protocol and add
-           * vector tile layers to the map instance (mapRef.current).
-           */}
+      {/*
+       * BLOCKER: After an overture_extract run, load the resulting PMTiles
+       * file here using the @maplibre/maplibre-gl-pmtiles protocol and add
+       * vector tile layers to the map instance (mapRef.current).
+       */}
+      <Box
+        style={{
+          width: 220,
+          flexShrink: 0,
+          borderLeft: "1px solid var(--gray-a4)",
+          background: "var(--color-panel-solid)",
+          overflowY: "auto",
+        }}
+        p="3"
+      >
+        <Text size="2" weight="bold" as="div" mb="2">
+          Layers
+        </Text>
+        <Text size="1" color="gray" as="p" mb="3">
           No layers loaded yet. Run <em>Ingest</em> or an Overture extract,
           then add the output PMTiles here.
-        </p>
-        <ul className="layer-list">
-          <li className="layer-item layer-item--placeholder">
-            <input type="checkbox" id="layer-places" disabled />
-            <label htmlFor="layer-places">places (not loaded)</label>
-          </li>
-        </ul>
-      </aside>
+        </Text>
+        <Flex align="center" gap="2" style={{ opacity: 0.5 }}>
+          <Checkbox disabled />
+          <Text size="2" color="gray">
+            places (not loaded)
+          </Text>
+        </Flex>
+      </Box>
     </div>
   );
 }

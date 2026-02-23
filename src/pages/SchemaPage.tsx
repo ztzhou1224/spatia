@@ -1,4 +1,16 @@
 import { useState, useEffect } from "react";
+import {
+  Box,
+  Heading,
+  Text,
+  TextField,
+  Button,
+  Callout,
+  Flex,
+  Code,
+  Table,
+  Badge,
+} from "@radix-ui/themes";
 import { safeInvoke, isTauri } from "../lib/tauri";
 import { MOCK_TABLES, type TableColumn } from "../mock/data";
 
@@ -48,79 +60,99 @@ export function SchemaPage() {
   }
 
   return (
-    <div className="page-content">
-      <h2>Schema Viewer</h2>
-      <p className="page-description">
+    <Box
+      p="5"
+      style={{ flex: 1, minHeight: 0, overflowY: "auto", maxWidth: 640 }}
+    >
+      <Heading size="5" mb="2">
+        Schema Viewer
+      </Heading>
+      <Text as="p" size="2" color="gray" mb="4">
         Inspect the columns of a DuckDB table via the engine's{" "}
-        <code>schema</code> command.
+        <Code>schema</Code> command.
         {!isTauri() && (
-          <span className="demo-note">
+          <Text color="red">
             {" "}
-            (Demo mode — mock schema shown for <em>{tableName}</em>)
-          </span>
+            (Demo mode — mock schema for <em>{tableName}</em>)
+          </Text>
         )}
-      </p>
+      </Text>
 
       <form
-        className="schema-form"
         onSubmit={(e) => {
           e.preventDefault();
           void loadSchema();
         }}
       >
-        <label>
-          Database path
-          <input
-            type="text"
-            value={dbPath}
-            onChange={(e) => setDbPath(e.target.value)}
-            placeholder="./spatia.duckdb"
-          />
-        </label>
-
-        <label>
-          Table name
-          <input
-            type="text"
-            value={tableName}
-            onChange={(e) => setTableName(e.target.value)}
-            placeholder="places"
-          />
-        </label>
-
-        <button type="submit" disabled={loading}>
-          {loading ? "Loading…" : "Load schema"}
-        </button>
+        <Flex gap="3" align="end" mb="4" wrap="wrap">
+          <Box style={{ flex: 1, minWidth: 160 }}>
+            <Text size="2" weight="medium" as="div" mb="1">
+              Database path
+            </Text>
+            <TextField.Root
+              value={dbPath}
+              onChange={(e) => setDbPath(e.target.value)}
+              placeholder="./spatia.duckdb"
+            />
+          </Box>
+          <Box style={{ flex: 1, minWidth: 120 }}>
+            <Text size="2" weight="medium" as="div" mb="1">
+              Table name
+            </Text>
+            <TextField.Root
+              value={tableName}
+              onChange={(e) => setTableName(e.target.value)}
+              placeholder="places"
+            />
+          </Box>
+          <Button type="submit" disabled={loading} size="2">
+            {loading ? "Loading…" : "Load schema"}
+          </Button>
+        </Flex>
       </form>
 
-      {error && <p className="error-msg">{error}</p>}
+      {error && (
+        <Callout.Root color="red" variant="soft" mb="3">
+          <Callout.Text>{error}</Callout.Text>
+        </Callout.Root>
+      )}
 
       {columns && columns.length === 0 && (
-        <p className="empty-msg">No columns found for table "{tableName}".</p>
+        <Text size="2" color="gray">
+          No columns found for table "{tableName}".
+        </Text>
       )}
 
       {columns && columns.length > 0 && (
-        <table className="schema-table">
-          <thead>
-            <tr>
-              <th>Column</th>
-              <th>Type</th>
-              <th>Nullable</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table.Root variant="surface">
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeaderCell>Column</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>Type</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>Nullable</Table.ColumnHeaderCell>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
             {columns.map((col) => (
-              <tr key={col.name}>
-                <td>{col.name}</td>
-                <td>
-                  <code>{col.type}</code>
-                </td>
-                <td>{col.nullable ? "yes" : "no"}</td>
-              </tr>
+              <Table.Row key={col.name}>
+                <Table.Cell>{col.name}</Table.Cell>
+                <Table.Cell>
+                  <Code variant="soft">{col.type}</Code>
+                </Table.Cell>
+                <Table.Cell>
+                  <Badge
+                    color={col.nullable ? "gray" : "green"}
+                    variant="soft"
+                    size="1"
+                  >
+                    {col.nullable ? "nullable" : "not null"}
+                  </Badge>
+                </Table.Cell>
+              </Table.Row>
             ))}
-          </tbody>
-        </table>
+          </Table.Body>
+        </Table.Root>
       )}
-    </div>
+    </Box>
   );
 }

@@ -1,4 +1,15 @@
 import { useState } from "react";
+import {
+  Box,
+  Heading,
+  Text,
+  TextField,
+  Button,
+  Callout,
+  Flex,
+  Code,
+  Strong,
+} from "@radix-ui/themes";
 import { safeInvoke, isTauri } from "../lib/tauri";
 import { type IngestResult, MOCK_INGEST_RESULT } from "../mock/data";
 
@@ -42,68 +53,77 @@ export function IngestPage() {
   }
 
   return (
-    <div className="page-content">
-      <h2>Ingest CSV</h2>
-      <p className="page-description">
-        Load a CSV file into a DuckDB table via the engine's{" "}
-        <code>ingest</code> command.
-        {!isTauri() && (
-          <span className="demo-note">
-            {" "}
-            (Demo mode — a mock result will be shown)
-          </span>
-        )}
-      </p>
+    <Box
+      p="5"
+      style={{ flex: 1, minHeight: 0, overflowY: "auto", maxWidth: 520 }}
+    >
+      <Heading size="5" mb="2">
+        Ingest CSV
+      </Heading>
+      <Text as="p" size="2" color="gray" mb="4">
+        Load a CSV file into a DuckDB table via the engine's <Code>ingest</Code>{" "}
+        command.
+        {!isTauri() && <Text color="red"> (Demo mode — mock result shown)</Text>}
+      </Text>
 
-      <form className="ingest-form" onSubmit={handleSubmit}>
-        <label>
-          Database path
-          <input
-            type="text"
-            value={dbPath}
-            onChange={(e) => setDbPath(e.target.value)}
-            placeholder="./spatia.duckdb"
-            required
-          />
-        </label>
+      <form onSubmit={handleSubmit}>
+        <Flex direction="column" gap="3">
+          <Box>
+            <Text size="2" weight="medium" as="div" mb="1">
+              Database path
+            </Text>
+            <TextField.Root
+              value={dbPath}
+              onChange={(e) => setDbPath(e.target.value)}
+              placeholder="./spatia.duckdb"
+              required
+            />
+          </Box>
 
-        <label>
-          CSV file path
-          <input
-            type="text"
-            value={csvPath}
-            onChange={(e) => setCsvPath(e.target.value)}
-            placeholder="./data/sample.csv"
-            required
-          />
-        </label>
+          <Box>
+            <Text size="2" weight="medium" as="div" mb="1">
+              CSV file path
+            </Text>
+            <TextField.Root
+              value={csvPath}
+              onChange={(e) => setCsvPath(e.target.value)}
+              placeholder="./data/sample.csv"
+              required
+            />
+          </Box>
 
-        <label>
-          Table name
-          <input
-            type="text"
-            value={tableName}
-            onChange={(e) => setTableName(e.target.value)}
-            placeholder="raw_staging"
-            required
-          />
-        </label>
+          <Box>
+            <Text size="2" weight="medium" as="div" mb="1">
+              Table name
+            </Text>
+            <TextField.Root
+              value={tableName}
+              onChange={(e) => setTableName(e.target.value)}
+              placeholder="raw_staging"
+              required
+            />
+          </Box>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Ingesting…" : "Ingest"}
-        </button>
+          <Button type="submit" disabled={loading} size="2">
+            {loading ? "Ingesting…" : "Ingest"}
+          </Button>
+        </Flex>
       </form>
 
-      {error && <p className="error-msg">{error}</p>}
+      {error && (
+        <Callout.Root color="red" variant="soft" mt="4">
+          <Callout.Text>{error}</Callout.Text>
+        </Callout.Root>
+      )}
 
       {result && (
-        <div className="result-box">
-          <p>
-            ✅ Table <strong>{result.table}</strong> loaded successfully
-            (status: {result.status}){!isTauri() && " [mock]"}
-          </p>
-        </div>
+        <Callout.Root color="green" variant="soft" mt="4">
+          <Callout.Text>
+            Table <Strong>{result.table}</Strong> loaded (status:{" "}
+            {result.status}){!isTauri() && " [mock]"}
+          </Callout.Text>
+        </Callout.Root>
       )}
-    </div>
+    </Box>
   );
 }

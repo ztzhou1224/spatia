@@ -10,7 +10,6 @@ import App from "./App";
 import { MapPage } from "./pages/MapPage";
 import { IngestPage } from "./pages/IngestPage";
 import { SchemaPage } from "./pages/SchemaPage";
-import { SearchPage } from "./pages/SearchPage";
 
 const rootRoute = createRootRoute({ component: App });
 
@@ -32,18 +31,7 @@ const schemaRoute = createRoute({
   component: SchemaPage,
 });
 
-const searchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/search",
-  component: SearchPage,
-});
-
-const routeTree = rootRoute.addChildren([
-  mapRoute,
-  ingestRoute,
-  schemaRoute,
-  searchRoute,
-]);
+const routeTree = rootRoute.addChildren([mapRoute, ingestRoute, schemaRoute]);
 
 const router = createRouter({ routeTree });
 
