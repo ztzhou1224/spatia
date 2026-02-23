@@ -34,7 +34,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
   - `ingest`: CSV import + extension load
   - `schema`: schema introspection
   - `identifiers`: SQL-safe validation helpers
-  - `geocode`: generic HTTP geocoding client (for future Geocodio integration)
+  - `geocode`: Geocodio API backup geocoding with DuckDB `geocode_cache` persistence
   - `types`: shared aliases/types
 - Prefer root-level re-exports in `lib.rs` for public API consistency.
 

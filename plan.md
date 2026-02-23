@@ -65,16 +65,17 @@ The Python geocoder sidecar (`src-python/spatia-geocoder/`) and all related Rust
 
 ## Phase 2.8: Geocodio API Backup Geocoding with Intensive Caching
 
-- [ ] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
-      Notes: Requires `SPATIA_GEOCODIO_API_KEY` env var. Endpoint: `https://api.geocodio.com/v1.7/geocode?api_key=<key>` (batch POST, up to 10 000 addresses per request).
-- [ ] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
-      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records the provider (e.g. `geocodio` or `overture`).
-- [ ] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
-- [ ] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
-- [ ] Add a `geocode` command to the executor that uses cache → Geocodio fallback → write cache.
-- [ ] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
-- [ ] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
-- [ ] Ensure `cargo clippy` has zero warnings after integration.
+- [x] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
+      Notes: Requires `SPATIA_GEOCODIO_API_KEY` env var. Endpoint: `https://api.geocodio.com/v1.7/geocode?api_key=<key>` (batch POST, up to 10 000 addresses per request). `SPATIA_GEOCODIO_BASE_URL` overrides the host for testing.
+- [x] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
+      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records the provider (e.g. `geocodio`).
+- [x] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
+- [x] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
+- [x] Add a `geocode` command to the executor that uses cache → Geocodio fallback → write cache.
+- [x] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
+      Summary: Added 10 tests covering cache CRUD, HTTP mock via mockito, command parsing, and missing-API-key error path.
+- [x] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`, `SPATIA_GEOCODIO_BASE_URL`) in CLI help text and `architecture.md`.
+- [x] Ensure `cargo clippy` has zero warnings after integration.
 
 ## Phase 3: The AI Brain (Data Cleaner)
 

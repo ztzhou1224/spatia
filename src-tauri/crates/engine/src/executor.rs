@@ -1,5 +1,5 @@
 use crate::{
-    ingest_csv, ingest_csv_to_table, overture_extract_to_table,
+    geocode_addresses, ingest_csv, ingest_csv_to_table, overture_extract_to_table,
     overture_geocode, overture_search, table_schema, BBox, EngineResult,
 };
 
@@ -32,6 +32,10 @@ enum Command {
         table_name: String,
         query: String,
         limit: usize,
+    },
+    Geocode {
+        db_path: String,
+        addresses: Vec<String>,
     },
 }
 
@@ -99,6 +103,11 @@ pub fn execute_command(command: &str) -> EngineResult<String> {
             let json = serde_json::to_string(&result)?;
             Ok(json)
         }
+        Command::Geocode { db_path, addresses } => {
+            let result = geocode_addresses(&db_path, &addresses)?;
+            let json = serde_json::to_string(&result)?;
+            Ok(json)
+        }
     }
 }
 
@@ -114,6 +123,7 @@ fn parse_command(command: &str) -> EngineResult<Command> {
         "overture_extract" => parse_overture_extract(&tokens),
         "overture_search" => parse_overture_search(&tokens),
         "overture_geocode" => parse_overture_geocode(&tokens),
+        "geocode" => parse_geocode(&tokens),
         _ => Err(format!("Unknown command: {name}").into()),
     }
 }
@@ -195,6 +205,16 @@ fn parse_overture_geocode(tokens: &[String]) -> EngineResult<Command> {
         table_name: tokens[2].clone(),
         query: tokens[3].clone(),
         limit,
+    })
+}
+
+fn parse_geocode(tokens: &[String]) -> EngineResult<Command> {
+    if tokens.len() < 3 {
+        return Err("Usage: geocode <db_path> <address> [address2...]".into());
+    }
+    Ok(Command::Geocode {
+        db_path: tokens[1].clone(),
+        addresses: tokens[2..].to_vec(),
     })
 }
 
@@ -340,6 +360,38 @@ mod tests {
         assert!(schema_result.contains("\"name\":\"city\""));
 
         cleanup_files(&db_path, &csv_path);
+    }
+
+    #[test]
+    fn parse_geocode_single_address() {
+        let command =
+            parse_command("geocode ./spatia.duckdb \"123 Main St, Springfield, IL\"").expect("parse");
+        assert_eq!(
+            command,
+            Command::Geocode {
+                db_path: "./spatia.duckdb".to_string(),
+                addresses: vec!["123 Main St, Springfield, IL".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_geocode_multiple_addresses() {
+        let command =
+            parse_command("geocode ./spatia.duckdb \"addr1\" \"addr2\"").expect("parse");
+        assert_eq!(
+            command,
+            Command::Geocode {
+                db_path: "./spatia.duckdb".to_string(),
+                addresses: vec!["addr1".to_string(), "addr2".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_geocode_missing_address_errors() {
+        let err = parse_command("geocode ./spatia.duckdb").expect_err("should fail");
+        assert!(err.to_string().contains("Usage: geocode"));
     }
 
     #[test]
