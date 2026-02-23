@@ -2,7 +2,7 @@
 
 ## System Shape
 
-Spatia is a desktop GIS app with four layers:
+Spatia is a desktop GIS app with three layers:
 
 1. React/Vite frontend (UI)
 2. Tauri host (desktop runtime + command bridge)
