@@ -23,7 +23,6 @@ Any MCP-compatible AI client (Claude Desktop, Cursor, etc.) can connect by launc
 |--------------------|-------------------------------------------------------|
 | `ingest_csv`       | `ingest <db_path> <csv_path> [table_name]`            |
 | `get_schema`       | `schema <db_path> <table_name>`                       |
-| `geocode`          | `geocode <addr>…`                                     |
 | `overture_extract` | `overture_extract <db> <theme> <type> <bbox> [table]` |
 | `overture_search`  | `overture_search <db> <table> <query> [limit]`        |
 | `overture_geocode` | `overture_geocode <db> <table> <query> [limit]`       |
@@ -57,6 +56,7 @@ Newline-delimited JSON on stdin/stdout (MCP stdio transport).
 - `spatia` (Tauri app shell)
 - `spatia_engine` (reusable domain logic)
 - `spatia_cli` (CLI wrapper over engine)
+- `spatia_mcp` (MCP stdio server)
 
 Why: isolates business logic, improves testability, keeps GUI/CLI thin.
 
@@ -90,13 +90,12 @@ Why: prevent SQL injection/syntax breakage with user-provided inputs.
 
 ### 6) Geocodio API Backup Geocoding with Intensive Caching
 
-When the local Python sidecar is unavailable or returns incomplete results, the engine falls back to the [Geocodio](https://www.geocodio.com/) REST API for batch geocoding.  To minimise paid API calls, every resolved address is immediately persisted in a DuckDB table (`geocode_cache`) so it is served from cache on all subsequent requests.
+When local Overture data is unavailable or returns incomplete results, the engine can fall back to the [Geocodio](https://www.geocodio.com/) REST API for batch geocoding. To minimise paid API calls, every resolved address is immediately persisted in a DuckDB table (`geocode_cache`) so it is served from cache on all subsequent requests.
 
 **Dispatch order** (cache-first):
 1. Check `geocode_cache` in DuckDB — return cached coordinates for matching addresses.
-2. Send remaining addresses to the local Python sidecar (geopy).
-3. For any addresses the sidecar cannot resolve, send them to the Geocodio batch endpoint.
-4. Write all newly resolved results to `geocode_cache` (upsert on `address`).
+2. For any addresses not in the cache, send them to the Geocodio batch endpoint.
+3. Write all newly resolved results to `geocode_cache` (upsert on `address`).
 
 **Cache schema:**
 ```sql
@@ -104,7 +103,7 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
     address   TEXT PRIMARY KEY,
     lat       REAL NOT NULL,
     lon       REAL NOT NULL,
-    source    TEXT NOT NULL,   -- 'sidecar' | 'geocodio'
+    source    TEXT NOT NULL,   -- 'geocodio'
     cached_at TIMESTAMP DEFAULT current_timestamp
 );
 ```
@@ -113,12 +112,7 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
 - `SPATIA_GEOCODIO_API_KEY` — required to enable the Geocodio fallback.
 - `SPATIA_GEOCODIO_BATCH_SIZE` — max addresses per Geocodio request (default 100, max 10 000).
 
-Why: eliminates redundant external calls, keeps costs predictable, and provides a reliable path when the sidecar binary is absent (e.g., CI or fresh installs).
-
-### 7) Transitional Compatibility
-
-- Existing Python sidecar geocoding remains temporarily available during migration.
-- New roadmap work prioritizes Overture commands and sidecar deprecation.
+Why: eliminates redundant external calls, keeps costs predictable, and provides a reliable geocoding path via Overture local search or the Geocodio API.
 
 ## Data Flows
 
@@ -138,12 +132,10 @@ CLI parses command -> calls engine functions -> prints structured output/errors.
 
 - `ingest <db_path> <csv_path> [table_name]`
 - `schema <db_path> <table_name>`
-- `geocode <address_1> <address_2> ...` (legacy, transitional)
-- Overture extract/search commands (planned replacement)
+- Overture extract/search commands
 
 Notes:
 
-- Quoted addresses are supported for geocoding (example: `"San Francisco, CA"`).
 - Engine returns JSON strings so CLI and Tauri share one command surface.
 
 ## Repository Map
@@ -152,6 +144,7 @@ Notes:
 - Tauri host: `src-tauri/src/`
 - Engine: `src-tauri/crates/engine/src/`
 - CLI: `src-tauri/crates/cli/src/`
+- MCP server: `src-tauri/crates/mcp/src/`
 - Overture extraction scripts and outputs: `src-tauri/` + data artifacts (planned)
 
 ## Quality Gates
@@ -167,6 +160,4 @@ Notes:
 ## Next Evolution (Shortlist)
 
 - Geocodio API backup geocoding module + DuckDB `geocode_cache` (Phase 2.8)
-- Overture extract commands + PMTiles precompute workflow
 - MapLibre PMTiles rendering baseline with layer toggles
-- Sidecar command deprecation once Overture search parity is reached

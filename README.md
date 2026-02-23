@@ -16,7 +16,7 @@ Target direction:
 
 - Query Overture GeoParquet with DuckDB (bounded extraction)
 - Build local PMTiles artifacts for map rendering
-- Replace legacy `geocode` surface with Overture search commands
+- Local geocoding via Overture search commands
 
 ## Development
 
@@ -37,7 +37,6 @@ cargo check -p spatia_engine
 ```bash
 cargo run -p spatia_cli -- ingest ./spatia.duckdb ./data/sample.csv places
 cargo run -p spatia_cli -- schema ./spatia.duckdb places
-cargo run -p spatia_cli -- geocode "San Francisco, CA"   # legacy/transitional
 ```
 
 If you want to pass a text line instead of args:
@@ -64,12 +63,6 @@ Requires `duckdb` CLI and `tippecanoe` in `PATH`.
 ## Testing the ingest
 
 Sample CSV lives at `data/sample.csv`. It includes a few rows with `id`, `name`, `lat`, `lon`, and `category` columns for quick testing.
-
-## Notes on Geocoding
-
-- The current geocoding path is transitional and may call external providers.
-- For debugging geocoding responses, set `SPATIA_GEOCODER_DEBUG=1`.
-- Long-term roadmap is Overture + DuckDB lookup/search to reduce sidecar dependence.
 
 ## Recommended IDE Setup
 

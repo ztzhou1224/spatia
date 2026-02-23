@@ -10,7 +10,6 @@
 //! |-------------------|-----------------------------|
 //! | `ingest_csv`      | `ingest <db> <csv> [table]` |
 //! | `get_schema`      | `schema <db> <table>`       |
-//! | `geocode`         | `geocode <addr>…`           |
 //! | `overture_extract`| `overture_extract …`        |
 //! | `overture_search` | `overture_search …`         |
 //! | `overture_geocode`| `overture_geocode …`        |
@@ -196,22 +195,6 @@ fn handle_tools_list() -> Result<Value, String> {
                 }
             },
             {
-                "name": "geocode",
-                "description": "Geocode one or more addresses using the local Python sidecar and return coordinates as a JSON array.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "addresses": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "List of addresses to geocode",
-                            "minItems": 1
-                        }
-                    },
-                    "required": ["addresses"]
-                }
-            },
-            {
                 "name": "overture_extract",
                 "description": "Extract Overture GIS data within a bounding box from the Overture parquet release into a local DuckDB table.",
                 "inputSchema": {
@@ -349,21 +332,6 @@ fn build_command(tool_name: &str, args: &Value) -> Result<String, String> {
             let table = require_str(args, "table_name")?;
             Ok(format!("schema {} {}", quote(db)?, quote(table)?))
         }
-        "geocode" => {
-            let addresses = args
-                .get("addresses")
-                .and_then(Value::as_array)
-                .ok_or_else(|| "Missing required argument: addresses".to_string())?;
-            if addresses.is_empty() {
-                return Err("addresses must not be empty".to_string());
-            }
-            let parts = addresses
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(quote)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(format!("geocode {}", parts.join(" ")))
-        }
         "overture_extract" => {
             let db = require_str(args, "db_path")?;
             let theme = require_str(args, "theme")?;
@@ -496,20 +464,6 @@ mod tests {
         let args = json!({ "db_path": "/tmp/test.duckdb", "table_name": "raw_staging" });
         let cmd = build_command("get_schema", &args).unwrap();
         assert_eq!(cmd, "schema /tmp/test.duckdb raw_staging");
-    }
-
-    #[test]
-    fn build_geocode_multiple_addresses() {
-        let args = json!({ "addresses": ["San Francisco, CA", "New York, NY"] });
-        let cmd = build_command("geocode", &args).unwrap();
-        assert_eq!(cmd, "geocode \"San Francisco, CA\" \"New York, NY\"");
-    }
-
-    #[test]
-    fn build_geocode_empty_addresses_errors() {
-        let args = json!({ "addresses": [] });
-        let err = build_command("geocode", &args).unwrap_err();
-        assert!(err.contains("must not be empty"));
     }
 
     #[test]
@@ -646,7 +600,6 @@ mod tests {
             .collect();
         assert!(names.contains(&"ingest_csv"));
         assert!(names.contains(&"get_schema"));
-        assert!(names.contains(&"geocode"));
         assert!(names.contains(&"overture_extract"));
         assert!(names.contains(&"overture_search"));
         assert!(names.contains(&"overture_geocode"));

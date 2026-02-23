@@ -25,9 +25,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 1. DuckDB `PRAGMA table_info` boolean fields are `bool`, not `i64`.
 2. Spatial extension must be loaded per connection before spatial SQL.
 3. Overture extraction must pin release/version for reproducible results.
-4. If sidecar is used during migration, binary naming must include target triple suffix.
-5. CSV paths in SQL need single-quote escaping (`'` -> `''`).
-6. Tests touching DuckDB temp files should clean `.duckdb`, `.wal`, and `.wal.lck`.
+4. If a `.duckdb` temp file is used in tests, clean `.duckdb`, `.wal`, and `.wal.lck`.
 
 ## Stable Engine Patterns
 
@@ -37,7 +35,7 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
   - `ingest`: CSV import + extension load
   - `schema`: schema introspection
   - `identifiers`: SQL-safe validation helpers
-  - `geocode`: transitional legacy geocode path
+  - `geocode`: generic HTTP geocoding client (for future Geocodio integration)
   - `types`: shared aliases/types
 - Prefer root-level re-exports in `lib.rs` for public API consistency.
 
@@ -48,8 +46,6 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 - Tauri dev: `pnpm tauri dev`
 - Tauri build: `pnpm tauri build`
 - MCP server: `cargo run -p spatia_mcp` (reads JSON-RPC from stdin, writes to stdout)
-- Legacy sidecar local run: `python src-python/spatia-geocoder/main.py`
-- Legacy sidecar package: `bash src-python/spatia-geocoder/scripts/package_sidecar.sh`
 
 ## Key Paths
 
@@ -57,7 +53,6 @@ Fast memory file for implementation constraints, recurring pitfalls, and daily c
 - CLI crate: `src-tauri/crates/cli/src`
 - MCP server crate: `src-tauri/crates/mcp/src`
 - Tauri app: `src-tauri/src`
-- Sidecar app: `src-python/spatia-geocoder/main.py`
 - Tauri config: `src-tauri/tauri.conf.json`
 
 ## Active Risks (Short)

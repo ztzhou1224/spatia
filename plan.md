@@ -24,24 +24,9 @@
 - [x] Ensure `cargo clippy` has zero warnings in the engine crate.
       Summary: Verified the workspace is clippy-clean after engine updates.
 
-## Phase 2: The Python Geocoding Sidecar
+## Phase 2: Python Geocoding Sidecar (Removed)
 
-- [x] Initialize a new Python project at `src-python/spatia-geocoder`.
-      Summary: Added the `spatia-geocoder` scaffold with a minimal `pyproject.toml` and entrypoint.
-- [x] Install Python dependencies: `fastapi`, `uvicorn`, `geopy`, `pyinstaller`.
-      Summary: Added geocoder dependencies to `pyproject.toml` and installed them in the workspace venv.
-- [x] Implement a FastAPI `POST /geocode` endpoint that accepts a list of addresses and returns coordinates.
-      Summary: Added a FastAPI geocode endpoint backed by geopy with Pydantic request/response models.
-- [x] Compile the Python app with `pyinstaller --onefile main.py`.
-      Summary: Built a single-file geocoder binary using PyInstaller.
-- [x] Add a script to rename the binary with the host target triple and move it to `src-tauri/binaries/`.
-      Summary: Added a packaging script to copy the PyInstaller binary into `src-tauri/binaries` with a host triple name.
-- [x] Update [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) to include `externalBin` for the sidecar.
-      Summary: Added `binaries/spatia-geocoder` to the Tauri bundle external binaries list.
-- [x] Update [src-tauri/src/main.rs](src-tauri/src/main.rs) to spawn the sidecar using `tauri_plugin_shell`.
-      Summary: Added `tauri-plugin-shell` and spawn logic in [src-tauri/src/lib.rs](src-tauri/src/lib.rs).
-- [x] Add `geocode_batch(address_list)` in Rust using `reqwest` to call the local sidecar.
-      Summary: Added `geocode_batch` in the engine crate with reqwest-based HTTP client to call the local geocoder sidecar.
+The Python geocoder sidecar (`src-python/spatia-geocoder/`) and all related Rust integration code have been removed. Geocoding is now handled via Overture local search (`overture_geocode`) or the Geocodio API fallback (Phase 2.8).
 
 ## Phase 2.5: String-Command Executor (Vercel D1-Style Interface)
 
@@ -50,8 +35,8 @@
 - [x] Implement `execute_command(command: &str) -> EngineResult<String>` with support for:
   - `ingest <db_path> <csv_path> [table_name]`
   - `schema <db_path> <table_name>`
-  - `geocode <address_1> <address_2> ...`
-    Summary: Added unified JSON-returning command execution for ingest/schema/geocode.
+  - Overture extract/search/geocode commands
+    Summary: Added unified JSON-returning command execution for ingest/schema/overture commands.
 - [x] Refactor CLI main.rs to use `execute_command()` instead of direct module calls.
       Summary: CLI now serializes argv into command strings and delegates execution to engine executor.
 - [x] Add Tauri command `execute_engine_command(command: String)` wrapping the executor.
@@ -83,16 +68,13 @@
 - [ ] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
       Notes: Requires `SPATIA_GEOCODIO_API_KEY` env var. Endpoint: `https://api.geocodio.com/v1.7/geocode?api_key=<key>` (batch POST, up to 10 000 addresses per request).
 - [ ] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
-      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records whether the result came from `sidecar` or `geocodio`.
+      Notes: Cache is stored in the app's DuckDB file so results persist across sessions; `source` records the provider (e.g. `geocodio` or `overture`).
 - [ ] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
 - [ ] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
-- [ ] Integrate Geocodio as the fallback in `geocode_batch_hybrid`: after the sidecar path fails or returns partial results, call `geocode_via_geocodio` for the remaining addresses, then write all results to the cache.
-- [ ] Wrap the full geocode call path in a cache-first pattern: check cache → sidecar → Geocodio fallback → write cache.
+- [ ] Add a `geocode` command to the executor that uses cache → Geocodio fallback → write cache.
 - [ ] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
-- [ ] Update `executor.rs` so the `geocode` command passes the active DuckDB connection to `geocode_batch_hybrid` for cache access.
 - [ ] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
 - [ ] Ensure `cargo clippy` has zero warnings after integration.
-      Summary: Add Geocodio API backup geocoding path, intensive DuckDB-backed result cache, and cache-first dispatch in the hybrid geocoder.
 
 ## Phase 2.9: MCP Server (AI Tool Integration)
 
@@ -102,16 +84,16 @@
       Summary: Single-file implementation in `src/main.rs`; no new external dependencies (reuses `serde`/`serde_json`/`spatia_engine`).
 - [x] Implement MCP protocol handler: `initialize`, `ping`, `tools/list`, `tools/call`, notification pass-through.
       Summary: All four methods implemented; notifications (no `id`) silently ignored; proper JSON-RPC error codes returned.
-- [x] Expose all six engine commands as MCP tools: `ingest_csv`, `get_schema`, `geocode`, `overture_extract`, `overture_search`, `overture_geocode`.
+- [x] Expose all active engine commands as MCP tools: `ingest_csv`, `get_schema`, `overture_extract`, `overture_search`, `overture_geocode`.
       Summary: Each tool maps arguments to the engine string-command format via `build_command`; tool execution errors returned as `isError: true` content.
 - [x] Add unit tests covering `build_command` for every tool and `handle_line` for every MCP method.
-      Summary: 18 tests all pass; zero clippy warnings.
+      Summary: 19 tests all pass; zero clippy warnings.
 - [x] Update `architecture.md` with MCP server section.
       Summary: Added MCP layer description, tool table, protocol methods, and Claude Desktop config example.
 - [x] Update `plan.md` and `summary.md`.
       Summary: Recorded new crate path, binary name, and quickstart command.
 
-
+## Phase 3: The AI Brain (Data Cleaner)
 
 - [ ] Add a Gemini client (SDK or REST via `reqwest`) behind a feature flag or config.
 - [ ] Fetch 20 random rows from `raw_staging` and the schema for context.
