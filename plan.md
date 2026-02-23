@@ -24,24 +24,9 @@
 - [x] Ensure `cargo clippy` has zero warnings in the engine crate.
       Summary: Verified the workspace is clippy-clean after engine updates.
 
-## Phase 2: The Python Geocoding Sidecar
+## Phase 2: Python Geocoding Sidecar (Removed)
 
-- [x] Initialize a new Python project at `src-python/spatia-geocoder`.
-      Summary: Added the `spatia-geocoder` scaffold with a minimal `pyproject.toml` and entrypoint.
-- [x] Install Python dependencies: `fastapi`, `uvicorn`, `geopy`, `pyinstaller`.
-      Summary: Added geocoder dependencies to `pyproject.toml` and installed them in the workspace venv.
-- [x] Implement a FastAPI `POST /geocode` endpoint that accepts a list of addresses and returns coordinates.
-      Summary: Added a FastAPI geocode endpoint backed by geopy with Pydantic request/response models.
-- [x] Compile the Python app with `pyinstaller --onefile main.py`.
-      Summary: Built a single-file geocoder binary using PyInstaller.
-- [x] Add a script to rename the binary with the host target triple and move it to `src-tauri/binaries/`.
-      Summary: Added a packaging script to copy the PyInstaller binary into `src-tauri/binaries` with a host triple name.
-- [x] Update [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) to include `externalBin` for the sidecar.
-      Summary: Added `binaries/spatia-geocoder` to the Tauri bundle external binaries list.
-- [x] Update [src-tauri/src/main.rs](src-tauri/src/main.rs) to spawn the sidecar using `tauri_plugin_shell`.
-      Summary: Added `tauri-plugin-shell` and spawn logic in [src-tauri/src/lib.rs](src-tauri/src/lib.rs).
-- [x] Add `geocode_batch(address_list)` in Rust using `reqwest` to call the local sidecar.
-      Summary: Added `geocode_batch` in the engine crate with reqwest-based HTTP client to call the local geocoder sidecar.
+The Python geocoder sidecar (`src-python/spatia-geocoder/`) and all related Rust integration code have been removed. Geocoding is now handled via Overture local search (`overture_geocode`) or the Geocodio API fallback (Phase 2.8).
 
 ## Phase 2.5: String-Command Executor (Vercel D1-Style Interface)
 
@@ -50,8 +35,8 @@
 - [x] Implement `execute_command(command: &str) -> EngineResult<String>` with support for:
   - `ingest <db_path> <csv_path> [table_name]`
   - `schema <db_path> <table_name>`
-  - `geocode <address_1> <address_2> ...`
-    Summary: Added unified JSON-returning command execution for ingest/schema/geocode.
+  - Overture extract/search/geocode commands
+    Summary: Added unified JSON-returning command execution for ingest/schema/overture commands.
 - [x] Refactor CLI main.rs to use `execute_command()` instead of direct module calls.
       Summary: CLI now serializes argv into command strings and delegates execution to engine executor.
 - [x] Add Tauri command `execute_engine_command(command: String)` wrapping the executor.
@@ -83,21 +68,17 @@
 - [x] Add `geocodio` module to `spatia_engine` crate with a `geocode_via_geocodio(addresses)` function that calls the Geocodio REST API using `reqwest`.
       Summary: Added `geocodio.rs` with typed response deserialization, batch-splitting by `SPATIA_GEOCODIO_BATCH_SIZE`, and unit tests.
 - [x] Create a DuckDB-backed geocoding cache table (`geocode_cache`) with columns: `address TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT, cached_at TIMESTAMP`.
-      Summary: Added `geocode_cache.rs` with `ensure_cache_table` that is idempotent.
+      Summary: Added `geocode_cache.rs` with `ensure_cache_table` that is idempotent. `source` records the provider (e.g. `geocodio` or `overture`).
 - [x] Implement cache-read helper `cache_lookup(conn, addresses) -> (hits, misses)` to split an address batch into already-cached results and uncached ones.
       Summary: Implemented in `geocode_cache.rs` with parameterized SQL query.
 - [x] Implement cache-write helper `cache_store(conn, results, source)` that upserts resolved results into `geocode_cache` using `INSERT OR REPLACE`.
       Summary: Implemented in `geocode_cache.rs`; skips entries without resolved coordinates.
-- [x] Integrate Geocodio as the fallback in `geocode_batch_hybrid`: after the sidecar path fails or returns partial results, call `geocode_via_geocodio` for the remaining addresses, then write all results to the cache.
-      Summary: Integrated in updated `geocode.rs`.
-- [x] Wrap the full geocode call path in a cache-first pattern: check cache → sidecar → Geocodio fallback → write cache.
-      Summary: Full cache-first dispatch implemented in `geocode_batch_hybrid`.
+- [x] Add a `geocode` command to the executor that uses cache → Geocodio fallback → write cache.
+      Summary: `geocode <db_path> <address_1> ...` command added; executor wires it to `geocode_batch_hybrid`.
 - [x] Add unit tests for cache lookup/store helpers and the Geocodio fallback branch (mock HTTP with a fixture response).
       Summary: Added 5 cache tests and 2 geocodio unit tests; all pass.
-- [x] Update `executor.rs` so the `geocode` command passes the active DuckDB connection to `geocode_batch_hybrid` for cache access.
-      Summary: `geocode` command now takes `<db_path>` as first arg; executor passes it to `geocode_batch_hybrid`.
 - [x] Document new env vars (`SPATIA_GEOCODIO_API_KEY`, `SPATIA_GEOCODIO_BATCH_SIZE`) in CLI help text and `architecture.md`.
-      Summary: Updated CLI help and confirmed architecture.md already documents both env vars.
+      Summary: Updated CLI help; `architecture.md` already documents both env vars.
 - [x] Ensure `cargo clippy` has zero warnings after integration.
       Summary: `cargo clippy -p spatia_engine -p spatia_cli` produces zero warnings.
 

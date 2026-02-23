@@ -26,13 +26,7 @@ pub fn print_help() {
     println!("  spatia_cli overture_search ./spatia.duckdb places_wa \"lincoln\" 10");
     println!("  spatia_cli overture_geocode ./spatia.duckdb addresses_ca \"321 n lincoln st redlands ca 92374\" 5");
     println!();
-    println!("geocode runtime modes:");
-    println!("  SPATIA_GEOCODER_MODE=oneshot|daemon|auto (default: auto)");
-    println!("  SPATIA_GEOCODER_DAEMON_THRESHOLD=<n> (default: 100)");
-    println!("  SPATIA_GEOCODER_BIN=/abs/path/to/geocoder_binary");
-    println!("  SPATIA_GEOCODER_DEBUG=1 (include status/error per result)");
-    println!();
-    println!("geocode cache + Geocodio fallback:");
+    println!("geocode env vars:");
     println!("  SPATIA_GEOCODIO_API_KEY=<key>       enable Geocodio API fallback");
     println!("  SPATIA_GEOCODIO_BATCH_SIZE=<n>      addresses per Geocodio request (default: 100)");
 }
