@@ -99,3 +99,14 @@ The Python geocoder sidecar (`src-python/spatia-geocoder/`) and all related Rust
 - [ ] Execute the SQL, return GeoJSON to the frontend, and render on the map.
 - [ ] Request a structured visualization command from the AI (e.g., `{ "visualization": "scatter" }`).
 - [ ] Update the React UI to parse the command and update Deck.gl layers dynamically.
+
+## Phase 6: Widget Focus System (Map-as-Widget + AI Context)
+
+> Design document: `widget-focus-system.md`
+
+- [ ] **6.1** Define `Widget`, `WidgetMetadata` types and create Zustand `useWidgetStore` with `registerWidget`, `unregisterWidget`, `setAppFocus`, and `updateMetadata` actions.
+- [ ] **6.2** Implement `useFocusGuard` hook; apply to existing `MapPage` and `SearchWidget` so they claim app-level focus on pointer-down without relying on browser focus/blur.
+- [ ] **6.3** Sync MapLibre runtime state into widget metadata: `move`/`zoom`/`rotate` events → `center`, `zoom`, `bearing`, `pitch`; popup open/close → `activePopups`; feature click → `selectedFeatures`; layer toggle → `visibleLayers`.
+- [ ] **6.4** Build the chat context pill component (shows label + key metadata from `lastNonChatFocusedWidgetId`); chat `onPointerDown` saves current app focus before yielding DOM focus.
+- [ ] **6.5** Add `buildAIContext(store)` helper that serialises the focused widget's metadata into a human-readable context string; wire into chat submit handler.
+- [ ] **6.6** Add a visual app-focus ring to widget borders (CSS class toggled by store, not `:focus`).
