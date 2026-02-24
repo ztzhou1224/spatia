@@ -9,9 +9,12 @@ mod types;
 
 pub use db_manager::DbManager;
 pub use executor::execute_command;
-pub use geocode::geocode_batch;
+pub use geocode::cache_lookup;
+pub use geocode::cache_store;
+pub use geocode::ensure_cache_table;
+pub use geocode::geocode_addresses;
+pub use geocode::geocode_via_geocodio;
 pub use geocode::GeocodeResult;
-pub use geocode::DEFAULT_GEOCODER_URL;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
 pub use overture::overture_extract_to_table;

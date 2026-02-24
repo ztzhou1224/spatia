@@ -91,7 +91,10 @@ CLI parses command -> calls engine functions -> prints structured output/errors.
 
 - `ingest <db_path> <csv_path> [table_name]`
 - `schema <db_path> <table_name>`
-- Overture extract/search commands
+- `overture_extract <db_path> <theme> <type> <bbox> [table_name]`
+- `overture_search <db_path> <table_name> <query> [limit]`
+- `overture_geocode <db_path> <table_name> <query> [limit]`
+- `geocode <db_path> <address> [address2...]`
 
 Notes:
 

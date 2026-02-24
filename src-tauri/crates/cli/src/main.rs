@@ -31,6 +31,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             | "overture_extract"
             | "overture_search"
             | "overture_geocode"
+            | "geocode"
     ) {
         commands::help::print_help();
         return Ok(());
