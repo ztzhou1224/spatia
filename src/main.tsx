@@ -15,13 +15,19 @@ const rootRoute = createRootRoute({ component: App });
 
 const mapRoute = createRoute({
   getParentRoute: () => rootRoute,
+  path: "/map",
+  component: MapPage,
+});
+
+const rootMapRoute = createRoute({
+  getParentRoute: () => rootRoute,
   path: "/",
   component: MapPage,
 });
 
 const ingestRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/ingest",
+  path: "/upload",
   component: IngestPage,
 });
 
@@ -31,7 +37,12 @@ const schemaRoute = createRoute({
   component: SchemaPage,
 });
 
-const routeTree = rootRoute.addChildren([mapRoute, ingestRoute, schemaRoute]);
+const routeTree = rootRoute.addChildren([
+  rootMapRoute,
+  mapRoute,
+  ingestRoute,
+  schemaRoute,
+]);
 
 const router = createRouter({ routeTree });
 

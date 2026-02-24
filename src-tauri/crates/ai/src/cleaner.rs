@@ -7,6 +7,7 @@ use crate::AiResult;
 
 /// Number of sample rows fetched from the table when building the AI prompt.
 const SAMPLE_ROW_COUNT: usize = 20;
+const RAW_STAGING_TABLE: &str = "raw_staging";
 
 /// The result of a cleaning run.
 #[derive(Debug, Clone)]
@@ -73,6 +74,37 @@ fn validate_statement(stmt: &str) -> AiResult<()> {
     Ok(())
 }
 
+/// Validate that column type declarations are unchanged after cleanup updates.
+fn validate_schema_types(before: &[TableColumn], after: &[TableColumn]) -> AiResult<()> {
+    if before.len() != after.len() {
+        return Err("schema changed during cleanup (column count mismatch)".into());
+    }
+
+    for (before_col, after_col) in before.iter().zip(after.iter()) {
+        if before_col.name != after_col.name {
+            return Err(format!(
+                "schema changed during cleanup (column order/name mismatch: expected '{}' found '{}')",
+                before_col.name, after_col.name
+            )
+            .into());
+        }
+        if before_col.data_type != after_col.data_type {
+            return Err(format!(
+                "column type changed during cleanup for '{}': '{}' -> '{}'",
+                before_col.name, before_col.data_type, after_col.data_type
+            )
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Clean the default ingestion table (`raw_staging`) using the Gemini AI.
+pub async fn clean_raw_staging(db_path: &str, client: &GeminiClient) -> AiResult<CleanResult> {
+    clean_table(db_path, RAW_STAGING_TABLE, client).await
+}
+
 /// Clean the data in `table_name` using the Gemini AI.
 ///
 /// Steps:
@@ -105,6 +137,7 @@ pub async fn clean_table(
 
     // 4. Re-fetch schema for caller inspection.
     let schema_after = table_schema(db_path, table_name)?;
+    validate_schema_types(&schema, &schema_after)?;
 
     Ok(CleanResult {
         table: table_name.to_string(),
@@ -115,7 +148,19 @@ pub async fn clean_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_sql_statements, validate_statement};
+    use super::{extract_sql_statements, validate_schema_types, validate_statement};
+    use spatia_engine::TableColumn;
+
+    fn col(name: &str, data_type: &str, cid: i64) -> TableColumn {
+        TableColumn {
+            cid,
+            name: name.to_string(),
+            data_type: data_type.to_string(),
+            notnull: false,
+            default_value: None,
+            primary_key: false,
+        }
+    }
 
     #[test]
     fn strips_markdown_fences_and_blanks() {
@@ -155,5 +200,19 @@ UPDATE foo SET baz = LOWER(baz);
         assert!(validate_statement("UPDATE foo SET a = 1").is_ok());
         // case-insensitive prefix check
         assert!(validate_statement("update foo SET a = 1").is_ok());
+    }
+
+    #[test]
+    fn schema_type_validation_accepts_unchanged_schema() {
+        let before = vec![col("city", "VARCHAR", 0), col("count", "INTEGER", 1)];
+        let after = vec![col("city", "VARCHAR", 0), col("count", "INTEGER", 1)];
+        assert!(validate_schema_types(&before, &after).is_ok());
+    }
+
+    #[test]
+    fn schema_type_validation_rejects_type_change() {
+        let before = vec![col("count", "INTEGER", 0)];
+        let after = vec![col("count", "VARCHAR", 0)];
+        assert!(validate_schema_types(&before, &after).is_err());
     }
 }

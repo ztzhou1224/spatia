@@ -3,6 +3,10 @@ name = "spatia_ai"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["gemini"]
+gemini = []
+
 [dependencies]
 duckdb = { version = "1.4.4", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

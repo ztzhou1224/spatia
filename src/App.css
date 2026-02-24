@@ -87,4 +87,7 @@ body,
   background: var(--accent-a3);
 }
 
-
+.widget-focus-ring {
+  outline: 2px solid var(--accent-a8);
+  outline-offset: -2px;
+}

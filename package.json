@@ -10,13 +10,19 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@deck.gl/core": "^9.2.9",
+    "@deck.gl/layers": "^9.2.9",
+    "@deck.gl/mapbox": "^9.2.9",
     "@radix-ui/themes": "^3.3.0",
     "@tanstack/react-router": "^1.162.1",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2",
     "maplibre-gl": "^5.18.0",
+    "pmtiles": "^4.4.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

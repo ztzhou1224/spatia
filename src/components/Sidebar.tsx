@@ -3,8 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { isTauri } from "../lib/tauri";
 
 const navItems = [
-  { to: "/" as const, label: "🗺 Map" },
-  { to: "/ingest" as const, label: "📥 Ingest" },
+  { to: "/map" as const, label: "🗺 Map" },
+  { to: "/upload" as const, label: "📥 Upload" },
   { to: "/schema" as const, label: "📋 Schema" },
 ];
 

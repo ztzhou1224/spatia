@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   Box,
   Heading,
@@ -13,6 +15,12 @@ import {
 import { safeInvoke, isTauri } from "../lib/tauri";
 import { type IngestResult, MOCK_INGEST_RESULT } from "../mock/data";
 
+type IngestProgressEvent = {
+  stage: string;
+  message: string;
+  percent: number;
+};
+
 export function IngestPage() {
   const [dbPath, setDbPath] = useState("./spatia.duckdb");
   const [csvPath, setCsvPath] = useState("");
@@ -20,24 +28,67 @@ export function IngestPage() {
   const [result, setResult] = useState<IngestResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<IngestProgressEvent | null>(null);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    const attach = async () => {
+      unlisten = await listen<IngestProgressEvent>(
+        "ingest-progress",
+        (event) => {
+          setProgress(event.payload);
+        },
+      );
+    };
+
+    void attach();
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  async function handlePickCsv() {
+    if (!isTauri()) {
+      return;
+    }
+
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+
+    if (typeof selected === "string") {
+      setCsvPath(selected);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress(null);
 
-    // BLOCKER: Requires Tauri backend.
-    //   Real call: invoke("execute_engine_command", {
-    //     command: `ingest ${dbPath} ${csvPath} ${tableName}`
-    //   })
-    //   Returns JSON string: { "status": "ok", "table": "<name>" }
-    //   See engine executor.rs for the full ingest command surface.
-    const raw = await safeInvoke<string>(
-      "execute_engine_command",
-      { command: `ingest ${dbPath} ${csvPath} ${tableName}` },
-      JSON.stringify({ ...MOCK_INGEST_RESULT, table: tableName }),
-    );
+    let raw: string | undefined;
+    if (isTauri()) {
+      raw = await safeInvoke<string>("ingest_csv_with_progress", {
+        dbPath,
+        csvPath,
+        tableName,
+      });
+    } else {
+      setProgress({
+        stage: "completed",
+        message: "Demo mode: using mock ingest response",
+        percent: 100,
+      });
+      raw = JSON.stringify({ ...MOCK_INGEST_RESULT, table: tableName });
+    }
 
     if (!raw) {
       setError("No response from engine.");
@@ -63,7 +114,9 @@ export function IngestPage() {
       <Text as="p" size="2" color="gray" mb="4">
         Load a CSV file into a DuckDB table via the engine's <Code>ingest</Code>{" "}
         command.
-        {!isTauri() && <Text color="red"> (Demo mode — mock result shown)</Text>}
+        {!isTauri() && (
+          <Text color="red"> (Demo mode — mock result shown)</Text>
+        )}
       </Text>
 
       <form onSubmit={handleSubmit}>
@@ -84,12 +137,21 @@ export function IngestPage() {
             <Text size="2" weight="medium" as="div" mb="1">
               CSV file path
             </Text>
-            <TextField.Root
-              value={csvPath}
-              onChange={(e) => setCsvPath(e.target.value)}
-              placeholder="./data/sample.csv"
-              required
-            />
+            <Flex gap="2">
+              <Box style={{ flex: 1 }}>
+                <TextField.Root
+                  value={csvPath}
+                  onChange={(e) => setCsvPath(e.target.value)}
+                  placeholder="./data/sample.csv"
+                  required
+                />
+              </Box>
+              {isTauri() && (
+                <Button type="button" variant="soft" onClick={handlePickCsv}>
+                  Pick file
+                </Button>
+              )}
+            </Flex>
           </Box>
 
           <Box>
@@ -113,6 +175,14 @@ export function IngestPage() {
       {error && (
         <Callout.Root color="red" variant="soft" mt="4">
           <Callout.Text>{error}</Callout.Text>
+        </Callout.Root>
+      )}
+
+      {loading && progress && (
+        <Callout.Root color="blue" variant="soft" mt="4">
+          <Callout.Text>
+            <Strong>{progress.percent}%</Strong> — {progress.message}
+          </Callout.Text>
         </Callout.Root>
       )}
 

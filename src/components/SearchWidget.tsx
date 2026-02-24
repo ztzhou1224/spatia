@@ -1,31 +1,80 @@
 import { useState, useRef, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import { TextField, Card, Box, Text, Flex } from "@radix-ui/themes";
-import { MOCK_GEOCODE_RESULTS, type GeocodeResult } from "../mock/data";
+import { safeInvoke } from "../lib/tauri";
+import { useFocusGuard } from "../lib/useFocusGuard";
+import { useWidgetStore } from "../lib/widgetStore";
 
-// BLOCKER: Replace synchronous mock filter below with an async safeInvoke call:
-//   import { safeInvoke } from "../lib/tauri";
-//   const raw = await safeInvoke<string>(
-//     "execute_engine_command",
-//     { command: `geocode "${query}"` },
-//     JSON.stringify(filtered),
-//   );
-//   const results = JSON.parse(raw ?? "[]") as GeocodeResult[];
-//
-//   Long-term: swap to Overture-based place search once the local DuckDB table is ready:
-//     command: `overture_search ./spatia.duckdb places_wa "${query}" 10`
+type OvertureSearchResult = {
+  id?: string;
+  label: string;
+};
+
+type OvertureGeocodeResult = {
+  id?: string;
+  label: string;
+  lat?: number;
+  lon?: number;
+};
 
 interface Props {
   mapRef: RefObject<maplibregl.Map | null>;
+  dbPath: string;
+  tableName: string;
 }
 
-export function SearchWidget({ mapRef }: Props) {
+function quoteArg(value: string): string {
+  return `"${value.replace(/"/g, " ").trim()}"`;
+}
+
+export function SearchWidget({ mapRef, dbPath, tableName }: Props) {
+  const appFocusedWidgetId = useWidgetStore(
+    (state) => state.appFocusedWidgetId,
+  );
+  const focusGuard = useFocusGuard({
+    id: "search-widget",
+    label: "Search Widget",
+    kind: "search",
+  });
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
+  const [suggestions, setSuggestions] = useState<OvertureSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function runOvertureSearch(
+    text: string,
+  ): Promise<OvertureSearchResult[]> {
+    const command = `overture_search ${quoteArg(dbPath)} ${quoteArg(tableName)} ${quoteArg(text)} 10`;
+    const raw = await safeInvoke<string>(
+      "execute_engine_command",
+      { command },
+      "[]",
+    );
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as OvertureSearchResult[];
+    } catch {
+      return [];
+    }
+  }
+
+  async function geocodeSelection(
+    label: string,
+  ): Promise<OvertureGeocodeResult | null> {
+    const command = `overture_geocode ${quoteArg(dbPath)} ${quoteArg(tableName)} ${quoteArg(label)} 1`;
+    const raw = await safeInvoke<string>("execute_engine_command", {
+      command,
+    });
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as OvertureGeocodeResult[];
+      return parsed[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setQuery(val);
     if (val.trim().length < 2) {
@@ -33,11 +82,9 @@ export function SearchWidget({ mapRef }: Props) {
       setOpen(false);
       return;
     }
-    const filtered = MOCK_GEOCODE_RESULTS.filter((r) =>
-      r.address.toLowerCase().includes(val.toLowerCase()),
-    );
-    setSuggestions(filtered);
-    setOpen(filtered.length > 0);
+    const matches = await runOvertureSearch(val);
+    setSuggestions(matches);
+    setOpen(matches.length > 0);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -46,24 +93,37 @@ export function SearchWidget({ mapRef }: Props) {
     }
   }
 
-  function selectResult(r: GeocodeResult) {
-    setQuery(r.address);
+  async function selectResult(r: OvertureSearchResult) {
+    setQuery(r.label);
     setSuggestions([]);
     setOpen(false);
+
+    const resolved = await geocodeSelection(r.label);
+    if (!resolved || resolved.lat === undefined || resolved.lon === undefined) {
+      return;
+    }
+
     const map = mapRef.current;
     if (!map) return;
-    map.flyTo({ center: [r.lon, r.lat], zoom: 13, duration: 1000 });
+    map.flyTo({
+      center: [resolved.lon, resolved.lat],
+      zoom: 13,
+      duration: 1000,
+    });
     if (markerRef.current) {
-      markerRef.current.setLngLat([r.lon, r.lat]);
+      markerRef.current.setLngLat([resolved.lon, resolved.lat]);
     } else {
-      markerRef.current = new maplibregl.Marker({ color: "#7c3aed" })
-        .setLngLat([r.lon, r.lat])
+      markerRef.current = new maplibregl.Marker()
+        .setLngLat([resolved.lon, resolved.lat])
         .addTo(map);
     }
   }
 
   return (
-    <Box className="search-widget">
+    <Box
+      className={`search-widget ${appFocusedWidgetId === "search-widget" ? "widget-focus-ring" : ""}`}
+      {...focusGuard}
+    >
       <TextField.Root
         value={query}
         onChange={handleChange}
@@ -78,7 +138,7 @@ export function SearchWidget({ mapRef }: Props) {
           <Flex direction="column">
             {suggestions.map((r) => (
               <Box
-                key={`${r.address}-${r.lat}`}
+                key={`${r.id ?? r.label}-${r.label}`}
                 px="3"
                 py="2"
                 className="search-suggestion-item"
@@ -89,10 +149,7 @@ export function SearchWidget({ mapRef }: Props) {
                 }}
               >
                 <Text size="2" as="div">
-                  {r.address}
-                </Text>
-                <Text size="1" color="gray">
-                  {r.lat.toFixed(4)}, {r.lon.toFixed(4)}
+                  {r.label}
                 </Text>
               </Box>
             ))}

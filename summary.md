@@ -1,63 +1,55 @@
-# Spatia Summary (Compact)
+# Spatia Summary (Stable)
 
 ## Purpose
 
-Fast memory file for implementation constraints, recurring pitfalls, and daily commands.
+Quick-start memory file for constraints, invariants, and daily commands.
 
 ## Current Stack
 
 - Frontend: React + TypeScript + Vite
 - Desktop shell: Tauri v2
-- Core data engine: Rust (`src-tauri/crates/engine`)
-- Data source direction: Overture + DuckDB (in migration)
-- Database: DuckDB + spatial extension
+- Rust crates:
+  - `spatia_engine` (core data + geospatial logic)
+  - `spatia_ai` (Gemini client + prompts + cleaner helpers)
+  - `spatia_cli` (CLI wrapper)
+- Database: DuckDB + `spatial` (and `httpfs` when needed)
+- Map runtime: MapLibre + PMTiles + Deck.gl overlay
 
 ## Non-Negotiables
 
-- Rust quality gate: `cargo test` and `cargo clippy` must pass before finalizing changes.
-- Keep engine memory-safe and warning-free.
-- Do not rewrite core architecture or DB schema without explicit permission.
-- Validate SQL identifiers for any user-provided table/column names.
+- Do not rewrite core architecture or DB schemas without explicit permission.
+- Keep Rust code warning-free and memory-safe.
+- Validate all SQL identifiers from user input.
+- Preserve test/lint gate before handoff:
+  1. `pnpm build`
+  2. `cargo test --workspace`
+  3. `cargo clippy --workspace`
 
 ## High-Value Gotchas
 
-1. DuckDB `PRAGMA table_info` boolean fields are `bool`, not `i64`.
-2. Spatial extension must be loaded per connection before spatial SQL.
-3. Overture extraction must pin release/version for reproducible results.
-4. If a `.duckdb` temp file is used in tests, clean `.duckdb`, `.wal`, and `.wal.lck`.
+1. `PRAGMA table_info` boolean fields map to `bool`.
+2. DuckDB extensions are connection-scoped; load per connection.
+3. Overture release pinning is required for reproducible extracts.
+4. Temp DuckDB test cleanup should remove `.duckdb`, `.wal`, `.wal.lck`.
+5. Analysis SQL execution currently validates prefix only (`CREATE [OR REPLACE] VIEW analysis_result AS ...`); deeper hardening remains a backlog item.
 
-## Stable Engine Patterns
+## Core Paths
 
-- Shared result type: `EngineResult<T> = Result<T, Box<dyn Error + Send + Sync>>`
-- Module boundaries:
-  - `db_manager`: DuckDB connection lifecycle
-  - `ingest`: CSV import + extension load
-  - `schema`: schema introspection
-  - `identifiers`: SQL-safe validation helpers
-  - `geocode`: Geocodio API backup geocoding with DuckDB `geocode_cache` persistence
-  - `types`: shared aliases/types
-- Prefer root-level re-exports in `lib.rs` for public API consistency.
+- Frontend pages/components: `src/pages`, `src/components`
+- Focus/context system: `src/lib/widgetStore.ts`, `src/lib/useFocusGuard.ts`, `src/lib/aiContext.ts`
+- Tauri commands: `src-tauri/src/lib.rs`
+- Engine core: `src-tauri/crates/engine/src`
+- AI prompts/client: `src-tauri/crates/ai/src`
 
 ## Operational Commands
 
+- Tauri dev: `pnpm tauri dev`
+- Frontend build: `pnpm build`
 - Rust tests: `cargo test --workspace`
 - Rust lint: `cargo clippy --workspace`
-- Tauri dev: `pnpm tauri dev`
-- Tauri build: `pnpm tauri build`
 
-## Key Paths
+## Active Risks
 
-- Engine crate: `src-tauri/crates/engine/src`
-- CLI crate: `src-tauri/crates/cli/src`
-- Tauri app: `src-tauri/src`
-- Tauri config: `src-tauri/tauri.conf.json`
-
-## Active Risks (Short)
-
-- Overture release/schema drift without strict pinning
-- Long-running operations can affect UX if not async/backgrounded
-- SQL string construction requires careful escaping and validation
-
-## Rule of Thumb
-
-If context needs to be loaded quickly, prefer this file + `plan.md` + `context.md`; keep deep rationale in `architecture.md` minimal and current.
+- Deck/loaders bundler warning in production build should be resolved/verified.
+- Visualization command support is only scatter-level in the Deck.gl mapping path.
+- AI env setup (`SPATIA_GEMINI_API_KEY`) and local PMTiles presence need clearer UX diagnostics.

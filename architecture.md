@@ -1,93 +1,54 @@
-# Spatia Architecture (Compact)
+# Spatia Architecture (Current)
 
-## System Shape
+## System Layers
 
-Spatia is a desktop GIS app with three layers:
+1. **Frontend**: React + TypeScript + Vite
+2. **Desktop Host**: Tauri v2 command bridge
+3. **Backend Core**: Rust workspace (`spatia`, `spatia_engine`, `spatia_ai`, `spatia_cli`)
+4. **Data Runtime**: DuckDB + spatial/httpfs + Overture data + local PMTiles artifacts
 
-1. React/Vite frontend (UI)
-2. Tauri host (desktop runtime + command bridge)
-3. Rust engine crate (data + spatial operations)
-4. Overture data pipeline (DuckDB extraction + PMTiles outputs)
+## Workspace Structure
 
-## Core Decisions
+- `src/` - frontend UI
+- `src-tauri/src/` - Tauri commands and app wiring
+- `src-tauri/crates/engine/` - data/geo execution core
+- `src-tauri/crates/ai/` - Gemini client + prompt builders + cleaner logic
+- `src-tauri/crates/cli/` - CLI wrapper over engine command surface
 
-### 1) Rust Multi-Crate Workspace
+## Core Runtime Flows
 
-- `spatia` (Tauri app shell)
-- `spatia_engine` (reusable domain logic)
-- `spatia_cli` (CLI wrapper over engine)
+### Ingestion
 
-Why: isolates business logic, improves testability, keeps GUI/CLI thin.
+UI upload -> Tauri `ingest_csv_with_progress` -> engine `ingest_csv(_to_table)` -> DuckDB table load -> progress events back to UI.
 
-### 2) DuckDB + Spatial Extension
+### Overture Local Data
 
-- Embedded DB, file-based, no external server.
-- Spatial extension is required for GIS functions and loaded at runtime.
+Engine `overture_extract` builds bounded DuckDB tables from Overture parquet -> normalized lookup table for search/geocode relevance.
 
-Why: strong analytical SQL, portable DB files, low deployment complexity.
+### Map Rendering
 
-### 3) Overture + DuckDB First
+MapLibre consumes PMTiles vector sources; layer visibility is controlled in UI and reflected into widget metadata.
 
-- Overture GeoParquet is queried via DuckDB with bbox filters.
-- Derived tables power map layers and search/geocoding-like lookups.
-- PMTiles artifacts are built from extracted data for frontend rendering.
+### Analysis Loop
 
-Why: unify map + lookup data source, reduce runtime complexity, and improve offline caching paths.
+Chat submit -> Tauri `analysis_chat` (schema-injected system prompt) -> Gemini response.
 
-### 4) Unified Engine Error Surface
+Goal-driven SQL generation -> `generate_analysis_sql` -> SQL execution via `execute_analysis_sql` -> `analysis_result` view -> GeoJSON -> rendered on map + Deck.gl overlay.
 
-- Engine APIs return `EngineResult<T>` with thread-safe boxed errors.
+### Visualization Command
 
-Why: reduces boilerplate and keeps async boundaries ergonomic.
+`generate_visualization_command` returns structured JSON (currently mapped to scatter baseline, extensible for heatmap/hexbin).
 
-### 5) Strict Input Validation
+## Stability / Safety Decisions
 
-- SQL identifiers validated before use.
-- File paths escaped when embedded in SQL strings.
+- Identifier validation enforced before SQL identifier interpolation.
+- Analysis SQL execution restricted to `CREATE [OR REPLACE] VIEW analysis_result AS ...` prefix.
+- Geocoding fallback is cache-first with persistent `geocode_cache` table.
+- AI module is feature-gated (`gemini`) and supports explicit environment-based configuration.
 
-Why: prevent SQL injection/syntax breakage with user-provided inputs.
+## Shared Command Surface
 
-### 6) Geocodio API Backup Geocoding with Intensive Caching
-
-When local Overture data is unavailable or returns incomplete results, the engine can fall back to the [Geocodio](https://www.geocodio.com/) REST API for batch geocoding. To minimise paid API calls, every resolved address is immediately persisted in a DuckDB table (`geocode_cache`) so it is served from cache on all subsequent requests.
-
-**Dispatch order** (cache-first):
-1. Check `geocode_cache` in DuckDB — return cached coordinates for matching addresses.
-2. For any addresses not in the cache, send them to the Geocodio batch endpoint.
-3. Write all newly resolved results to `geocode_cache` (upsert on `address`).
-
-**Cache schema:**
-```sql
-CREATE TABLE IF NOT EXISTS geocode_cache (
-    address   TEXT PRIMARY KEY,
-    lat       REAL NOT NULL,
-    lon       REAL NOT NULL,
-    source    TEXT NOT NULL,   -- 'geocodio'
-    cached_at TIMESTAMP DEFAULT current_timestamp
-);
-```
-
-**Configuration env vars:**
-- `SPATIA_GEOCODIO_API_KEY` — required to enable the Geocodio fallback.
-- `SPATIA_GEOCODIO_BATCH_SIZE` — max addresses per Geocodio request (default 100, max 10 000).
-
-Why: eliminates redundant external calls, keeps costs predictable, and provides a reliable geocoding path via Overture local search or the Geocodio API.
-
-## Data Flows
-
-### CSV Ingestion
-
-Frontend path -> Tauri command -> engine opens DuckDB -> loads spatial extension -> `read_csv_auto` into staging table -> schema returned to UI.
-
-### Overture Extract + Search
-
-Engine queries Overture parquet -> stores bounded local tables in DuckDB -> exports/builds PMTiles -> frontend renders vector layers and runs lookup against local tables.
-
-### CLI
-
-CLI parses command -> calls engine functions -> prints structured output/errors.
-
-## String Command Syntax
+Engine executor supports:
 
 - `ingest <db_path> <csv_path> [table_name]`
 - `schema <db_path> <table_name>`
@@ -96,29 +57,17 @@ CLI parses command -> calls engine functions -> prints structured output/errors.
 - `overture_geocode <db_path> <table_name> <query> [limit]`
 - `geocode <db_path> <address> [address2...]`
 
-Notes:
+## Focus System
 
-- Engine returns JSON strings so CLI and Tauri share one command surface.
-
-## Repository Map
-
-- Frontend: `src/`
-- Tauri host: `src-tauri/src/`
-- Engine: `src-tauri/crates/engine/src/`
-- CLI: `src-tauri/crates/cli/src/`
-- Overture extraction scripts and outputs: `src-tauri/` + data artifacts (planned)
+- Zustand widget store tracks widget registry, app focus, and metadata.
+- `useFocusGuard` captures pointer-down app focus for map/search/chat widgets.
+- Map runtime syncs camera/layer/selection metadata into store.
+- Chat context is derived from `lastNonChatFocusedWidgetId` via `buildAIContext`.
 
 ## Quality Gates
 
+Before considering a task complete:
+
+- `pnpm build`
 - `cargo test --workspace`
 - `cargo clippy --workspace`
-
-## Known Constraints
-
-- Spatial extension availability is connection-scoped.
-- Overture release/version pinning is required for reproducible outputs.
-
-## Next Evolution (Shortlist)
-
-- Geocodio API backup geocoding module + DuckDB `geocode_cache` (Phase 2.8)
-- MapLibre PMTiles rendering baseline with layer toggles

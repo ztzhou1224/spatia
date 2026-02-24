@@ -1,3 +1,4 @@
+mod analysis;
 mod db_manager;
 mod executor;
 mod geocode;
@@ -7,6 +8,8 @@ mod overture;
 mod schema;
 mod types;
 
+pub use analysis::execute_analysis_sql_to_geojson;
+pub use analysis::AnalysisExecutionResult;
 pub use db_manager::DbManager;
 pub use executor::execute_command;
 pub use geocode::cache_lookup;
