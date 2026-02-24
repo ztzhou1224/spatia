@@ -4291,6 +4291,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spatia_ai"
+version = "0.1.0"
+dependencies = [
+ "duckdb",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "spatia_engine",
+ "tokio",
+]
+
+[[package]]
 name = "spatia_cli"
 version = "0.1.0"
 dependencies = [
