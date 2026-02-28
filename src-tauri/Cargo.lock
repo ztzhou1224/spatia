@@ -4308,6 +4308,7 @@ dependencies = [
 name = "spatia"
 version = "0.1.0"
 dependencies = [
+ "duckdb",
  "serde",
  "serde_json",
  "spatia_ai",
