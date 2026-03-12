@@ -7,6 +7,7 @@ mod geocode_integration_tests;
 mod identifiers;
 mod ingest;
 mod overture;
+pub mod search_index;
 mod schema;
 mod types;
 

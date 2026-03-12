@@ -90,6 +90,26 @@ pub fn overture_extract_to_table(
     conn.execute(&sql, [])?;
     create_lookup_table(&conn, &table, theme)?;
 
+    // Build Tantivy search index for the lookup table
+    let lookup = lookup_table_name(&table);
+    let index_dir = crate::search_index::index_dir_for_table(db_path, &lookup);
+    match crate::search_index::build_index(&conn, &lookup, &index_dir) {
+        Ok(count) => {
+            tracing::info!(
+                doc_count = count,
+                lookup_table = lookup.as_str(),
+                "overture_extract: built Tantivy search index"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                lookup_table = lookup.as_str(),
+                "overture_extract: failed to build Tantivy index, LIKE fallback will be used"
+            );
+        }
+    }
+
     let count_sql = format!("SELECT COUNT(*) FROM {table}", table = table);
     let mut stmt = conn.prepare(&count_sql)?;
     let row_count: i64 = stmt.query_row([], |row| row.get(0))?;

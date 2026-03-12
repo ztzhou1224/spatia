@@ -411,50 +411,184 @@ fn local_candidates_for_address(
     Ok(out)
 }
 
+/// Try to resolve addresses using a Tantivy index for the given lookup table.
+/// Falls back to LIKE-based matching if no Tantivy index exists.
+fn tantivy_fuzzy_geocode(
+    conn: &Connection,
+    db_path: &str,
+    lookup_table: &str,
+    addresses: &[String],
+) -> EngineResult<Vec<(String, GeocodeBatchResult)>> {
+    use crate::search_index;
+
+    let index_dir = search_index::index_dir_for_table(db_path, lookup_table);
+    if !index_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let base_table = lookup_table.trim_end_matches("_lookup").to_string();
+    validate_table_name(&base_table)?;
+
+    // Detect coordinate columns on the base table
+    let has_lat = has_column(conn, &base_table, "lat")?;
+    let has_lon = has_column(conn, &base_table, "lon")?;
+    let has_geometry = has_column(conn, &base_table, "geometry")?;
+    let has_id = has_column(conn, &base_table, "id")?;
+
+    if !has_id || (!has_lat && !has_lon && !has_geometry) {
+        return Ok(Vec::new());
+    }
+
+    let coord_expr = if has_lat && has_lon {
+        "CAST(t.lat AS DOUBLE) AS lat, CAST(t.lon AS DOUBLE) AS lon".to_string()
+    } else if has_geometry {
+        ensure_spatial_loaded(conn)?;
+        "CAST(ST_Y(t.geometry) AS DOUBLE) AS lat, CAST(ST_X(t.geometry) AS DOUBLE) AS lon"
+            .to_string()
+    } else {
+        return Ok(Vec::new());
+    };
+
+    let mut results = Vec::new();
+
+    for address in addresses {
+        let hits = search_index::search_addresses(&index_dir, address, 5)?;
+        if hits.is_empty() {
+            continue;
+        }
+
+        // Take the top hit and fetch its coordinates from DuckDB
+        let top = &hits[0];
+        if top.score < MIN_SCORE {
+            continue;
+        }
+
+        let escaped_id = top.source_id.replace('\'', "''");
+        let sql = format!(
+            "SELECT {coord_expr} FROM {base} t WHERE CAST(t.id AS VARCHAR) = '{id}' LIMIT 1",
+            coord_expr = coord_expr,
+            base = base_table,
+            id = escaped_id,
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query([])?;
+
+        if let Some(row) = rows.next()? {
+            let lat: f64 = row.get::<_, f64>(0).unwrap_or(0.0);
+            let lon: f64 = row.get::<_, f64>(1).unwrap_or(0.0);
+
+            results.push((
+                address.clone(),
+                GeocodeBatchResult {
+                    address: address.clone(),
+                    lat,
+                    lon,
+                    source: "overture_fuzzy".to_string(),
+                    confidence: top.score,
+                    matched_label: Some(top.label.clone()),
+                    matched_table: Some(base_table.clone()),
+                },
+            ));
+        }
+    }
+
+    Ok(results)
+}
+
 fn local_fuzzy_geocode(
     conn: &Connection,
     addresses: &[String],
+    db_path: Option<&str>,
 ) -> EngineResult<Vec<GeocodeBatchResult>> {
     let lookup_tables = find_lookup_tables(conn)?;
     if lookup_tables.is_empty() {
         return Ok(Vec::new());
     }
 
-    let mut out = Vec::new();
-    for address in addresses {
-        let query_norm = normalize_address(address);
-        if query_norm.is_empty() {
-            continue;
-        }
-
-        let mut best: Option<(LocalGeocodeCandidate, f64)> = None;
-
+    // First, try Tantivy-based search if db_path is available
+    let mut tantivy_resolved: HashMap<String, GeocodeBatchResult> = HashMap::new();
+    if let Some(db_path) = db_path {
         for lookup_table in &lookup_tables {
-            let candidates = local_candidates_for_address(conn, lookup_table, address)?;
-            for candidate in candidates {
-                let candidate_norm = normalize_address(&candidate.label);
-                let score = score_candidate(&query_norm, &candidate_norm);
-                if score < MIN_SCORE {
-                    continue;
-                }
-
-                match &best {
-                    Some((_, best_score)) if score <= *best_score => {}
-                    _ => best = Some((candidate, score)),
+            if crate::search_index::has_index(db_path, lookup_table) {
+                match tantivy_fuzzy_geocode(conn, db_path, lookup_table, addresses) {
+                    Ok(hits) => {
+                        info!(
+                            hits = hits.len(),
+                            table = lookup_table.as_str(),
+                            "local_fuzzy_geocode: Tantivy search returned results"
+                        );
+                        for (addr, result) in hits {
+                            // Keep the highest scoring match per address
+                            let existing_score = tantivy_resolved
+                                .get(&addr)
+                                .map(|r| r.confidence)
+                                .unwrap_or(0.0);
+                            if result.confidence > existing_score {
+                                tantivy_resolved.insert(addr, result);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            table = lookup_table.as_str(),
+                            "local_fuzzy_geocode: Tantivy search failed, falling back to LIKE"
+                        );
+                    }
                 }
             }
         }
+    }
 
-        if let Some((candidate, score)) = best {
-            out.push(GeocodeBatchResult {
-                address: address.clone(),
-                lat: candidate.lat,
-                lon: candidate.lon,
-                source: "overture_fuzzy".to_string(),
-                confidence: score,
-                matched_label: Some(candidate.label),
-                matched_table: Some(candidate.table),
-            });
+    // For addresses not resolved by Tantivy, fall back to LIKE-based matching
+    let unresolved: Vec<&String> = addresses
+        .iter()
+        .filter(|a| !tantivy_resolved.contains_key(*a))
+        .collect();
+
+    let mut out: Vec<GeocodeBatchResult> = tantivy_resolved.into_values().collect();
+
+    if !unresolved.is_empty() {
+        debug!(
+            count = unresolved.len(),
+            "local_fuzzy_geocode: falling back to LIKE-based matching for unresolved addresses"
+        );
+        for address in unresolved {
+            let query_norm = normalize_address(address);
+            if query_norm.is_empty() {
+                continue;
+            }
+
+            let mut best: Option<(LocalGeocodeCandidate, f64)> = None;
+
+            for lookup_table in &lookup_tables {
+                let candidates = local_candidates_for_address(conn, lookup_table, address)?;
+                for candidate in candidates {
+                    let candidate_norm = normalize_address(&candidate.label);
+                    let score = score_candidate(&query_norm, &candidate_norm);
+                    if score < MIN_SCORE {
+                        continue;
+                    }
+
+                    match &best {
+                        Some((_, best_score)) if score <= *best_score => {}
+                        _ => best = Some((candidate, score)),
+                    }
+                }
+            }
+
+            if let Some((candidate, score)) = best {
+                out.push(GeocodeBatchResult {
+                    address: address.clone(),
+                    lat: candidate.lat,
+                    lon: candidate.lon,
+                    source: "overture_fuzzy".to_string(),
+                    confidence: score,
+                    matched_label: Some(candidate.label),
+                    matched_table: Some(candidate.table),
+                });
+            }
         }
     }
 
@@ -725,7 +859,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> EngineResult<(Vec<G
 
     if !misses.is_empty() {
         info!(miss_count = misses.len(), "geocode_batch: attempting local fuzzy geocode");
-        let local_hits = local_fuzzy_geocode(&conn, &misses)?;
+        let local_hits = local_fuzzy_geocode(&conn, &misses, Some(db_path))?;
         debug!(local_hits = local_hits.len(), "geocode_batch: local fuzzy geocode complete");
 
         if !local_hits.is_empty() {
@@ -1626,7 +1760,7 @@ mod tests {
         .expect("insert lookup");
 
         let query = vec!["123 main st portland".to_string()];
-        let local_hits = local_fuzzy_geocode(&conn, &query).expect("local fuzzy geocode");
+        let local_hits = local_fuzzy_geocode(&conn, &query, None).expect("local fuzzy geocode");
 
         assert_eq!(local_hits.len(), 1, "candidate should be found by fuzzy search");
         let hit = &local_hits[0];
@@ -1775,7 +1909,7 @@ mod tests {
         // Use a wrong-city query so the score lands between MIN_SCORE and
         // MIN_LOCAL_ACCEPT_SCORE with the weighted scorer (~0.69).
         let query = vec!["123 main st portland".to_string()];
-        let local_hits = local_fuzzy_geocode(&conn, &query).expect("fuzzy geocode");
+        let local_hits = local_fuzzy_geocode(&conn, &query, None).expect("fuzzy geocode");
         assert_eq!(local_hits.len(), 1, "candidate must be found");
         let score = local_hits[0].confidence;
         assert!(score >= MIN_SCORE, "score {score:.3} must be >= MIN_SCORE");
