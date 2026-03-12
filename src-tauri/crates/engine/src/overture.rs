@@ -139,16 +139,14 @@ pub fn overture_search(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
-        Ok(OvertureSearchResult {
-            id: row.get(0).ok(),
-            label: row.get::<_, String>(1).unwrap_or_default(),
-        })
-    })?;
+    let mut rows = stmt.query([])?;
 
     let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
+    while let Some(row) = rows.next()? {
+        out.push(OvertureSearchResult {
+            id: row.get(0).ok(),
+            label: row.get::<_, String>(1).unwrap_or_default(),
+        });
     }
     Ok(out)
 }
@@ -198,18 +196,16 @@ pub fn overture_geocode(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
-        Ok(OvertureGeocodeResult {
+    let mut rows = stmt.query([])?;
+
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        out.push(OvertureGeocodeResult {
             id: row.get(0).ok(),
             label: row.get::<_, String>(1).unwrap_or_default(),
             lat: row.get(2).ok(),
             lon: row.get(3).ok(),
-        })
-    })?;
-
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
+        });
     }
     Ok(out)
 }
@@ -291,12 +287,16 @@ fn create_lookup_table(conn: &Connection, table_name: &str, theme: &str) -> Engi
 }
 
 fn has_column(conn: &Connection, table_name: &str, column: &str) -> EngineResult<bool> {
-        let pragma = format!("PRAGMA table_info('{table}')", table = table_name);
-        let mut stmt = conn.prepare(&pragma)?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        let mut stmt = conn.prepare(
+            "SELECT column_name FROM information_schema.columns \
+             WHERE table_schema = 'main' AND table_name = ? \
+             ORDER BY ordinal_position"
+        )?;
+        let mut rows = stmt.query(duckdb::params![table_name])?;
 
-        for name in rows {
-                if name?.eq_ignore_ascii_case(column) {
+        while let Some(row) = rows.next()? {
+                let name: String = row.get(0)?;
+                if name.eq_ignore_ascii_case(column) {
                         return Ok(true);
                 }
         }

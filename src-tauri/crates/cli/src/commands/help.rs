@@ -29,5 +29,5 @@ pub fn print_help() {
     println!("geocode env vars:");
     println!("  SPATIA_GEOCODIO_API_KEY      Geocodio API key (required for cache misses)");
     println!("  SPATIA_GEOCODIO_BATCH_SIZE   Max addresses per Geocodio request (default 100, max 10000)");
-    println!("  SPATIA_GEOCODIO_BASE_URL     Override Geocodio API base URL (default https://api.geocodio.com)");
+    println!("  SPATIA_GEOCODIO_BASE_URL     Override Geocodio API base URL (default https://api.geocod.io)");
 }

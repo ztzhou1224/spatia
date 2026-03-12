@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
 
 use crate::identifiers::validate_table_name;
 use crate::EngineResult;
@@ -15,27 +16,36 @@ pub struct TableColumn {
 }
 
 pub fn table_schema(db_path: &str, table_name: &str) -> EngineResult<Vec<TableColumn>> {
+    debug!(table = %table_name, "table_schema: fetching schema");
     validate_table_name(table_name)?;
     let conn = Connection::open(db_path)?;
-    let sql = format!("PRAGMA table_info('{table}')", table = table_name);
+
+    // Use information_schema with query() (not query_map) to avoid DuckDB
+    // 1.4.4 Rust driver panic on column_count() before statement execution.
+    let sql = format!(
+        "SELECT ordinal_position - 1, column_name, data_type, \
+               CASE WHEN is_nullable = 'NO' THEN true ELSE false END, \
+               column_default \
+         FROM information_schema.columns \
+         WHERE table_schema = 'main' AND table_name = '{}' \
+         ORDER BY ordinal_position",
+        table_name.replace('\'', "''")
+    );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
-        let notnull: bool = row.get(3)?;
-        let pk: bool = row.get(5)?;
-        Ok(TableColumn {
+    let mut rows = stmt.query([])?;
+
+    let mut columns = Vec::new();
+    while let Some(row) = rows.next()? {
+        columns.push(TableColumn {
             cid: row.get(0)?,
             name: row.get(1)?,
             data_type: row.get(2)?,
-            notnull,
+            notnull: row.get(3)?,
             default_value: row.get(4)?,
-            primary_key: pk,
-        })
-    })?;
-
-    let mut columns = Vec::new();
-    for row in rows {
-        columns.push(row?);
+            primary_key: false,
+        });
     }
+    info!(table = %table_name, column_count = columns.len(), "table_schema: fetched successfully");
     Ok(columns)
 }
 

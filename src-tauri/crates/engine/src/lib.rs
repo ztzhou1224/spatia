@@ -2,6 +2,8 @@ mod analysis;
 mod db_manager;
 mod executor;
 mod geocode;
+#[cfg(test)]
+mod geocode_integration_tests;
 mod identifiers;
 mod ingest;
 mod overture;
@@ -10,6 +12,7 @@ mod types;
 
 pub use analysis::execute_analysis_sql_to_geojson;
 pub use analysis::AnalysisExecutionResult;
+pub use analysis::TabularResult;
 pub use db_manager::DbManager;
 pub use executor::execute_command;
 pub use geocode::cache_lookup;
@@ -20,6 +23,7 @@ pub use geocode::geocode_batch;
 pub use geocode::geocode_via_geocodio;
 pub use geocode::GeocodeBatchResult;
 pub use geocode::GeocodeResult;
+pub use geocode::GeocodeStats;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
 pub use overture::overture_extract_to_table;

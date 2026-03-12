@@ -1,93 +1,110 @@
-/* Structural layout only — all component styles come from @radix-ui/themes */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* ── Design tokens ───────────────────────────────────────── */
+@theme {
+  --color-background: #0f172a;
+  --color-foreground: #f8fafc;
+  --color-muted: #64748b;
+  --color-muted-foreground: #94a3b8;
+  --color-card: rgba(15, 23, 42, 0.80);
+  --color-card-foreground: #f8fafc;
+  --color-border: rgba(148, 163, 184, 0.15);
+  --color-input: rgba(148, 163, 184, 0.15);
+  --color-ring: #8b5cf6;
+  --color-primary: #8b5cf6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: rgba(148, 163, 184, 0.12);
+  --color-secondary-foreground: #f8fafc;
+  --color-accent: rgba(139, 92, 246, 0.15);
+  --color-accent-foreground: #c4b5fd;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
 }
 
-body,
-#root {
-  height: 100vh;
-  overflow: hidden;
+/* ── Base styles ─────────────────────────────────────────── */
+/* Inside @layer base so Tailwind utilities can always override */
+@layer base {
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body,
+  #root {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Smooth interactive transitions */
+  button,
+  [role="button"] {
+    transition: all 150ms ease;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5);
+  }
 }
 
-.app-shell {
-  display: flex;
-  height: 100vh;
-}
+/* ── Component styles ────────────────────────────────────── */
+/* Inside @layer components so utilities still win */
+@layer components {
+  .app-layout {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
 
-/* Sidebar */
-.sidebar {
-  width: 220px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
+  .map-fill {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
 
-.sidebar-link {
-  display: block;
-  padding: 6px 12px;
-  border-radius: var(--radius-2);
-  text-decoration: none;
-  color: var(--gray-11);
-}
+  .glass-panel {
+    background: rgba(15, 23, 42, 0.80);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+  }
 
-.sidebar-link:hover {
-  background: var(--gray-a3);
-}
+  .floating-panel {
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.4),
+      0 10px 15px -3px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(148, 163, 184, 0.08);
+  }
 
-.sidebar-link--active {
-  background: var(--accent-a3);
-  color: var(--accent-11);
-}
+  .table-card {
+    transition: border-color 150ms ease;
+  }
 
-/* Main content */
-.main-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Map page */
-.map-wrapper {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  position: relative;
-  overflow: hidden;
-}
-
-.map-container {
-  flex: 1;
-  min-height: 0;
-}
-
-/* Search widget – absolute overlay on map */
-.search-widget {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-  width: 300px;
-}
-
-.search-suggestions {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 11;
-}
-
-.search-suggestion-item:hover {
-  background: var(--accent-a3);
-}
-
-.widget-focus-ring {
-  outline: 2px solid var(--accent-a8);
-  outline-offset: -2px;
+  .table-card:hover {
+    border-color: rgba(148, 163, 184, 0.25);
+  }
 }

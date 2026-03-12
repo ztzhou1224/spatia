@@ -1,12 +1,43 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import path from "path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+
+  resolve: {
+    alias: {
+      "@": path.resolve("src"),
+      // @loaders.gl/worker-utils imports `spawn` from child_process inside its
+      // child-process-proxy.js. That code path is only used in Node/worker
+      // environments; it is never reached in a browser build. We stub the module
+      // with an empty shim so Vite/Rollup does not emit the
+      // "'spawn' is not exported by __vite-browser-external" warning.
+      child_process: path.resolve("src/shims/child_process.js"),
+    },
+  },
+
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ["maplibre-gl"],
+          deckgl: [
+            "@deck.gl/core",
+            "@deck.gl/layers",
+            "@deck.gl/aggregation-layers",
+            "@deck.gl/mapbox",
+          ],
+          recharts: ["recharts"],
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

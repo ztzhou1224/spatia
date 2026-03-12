@@ -6,7 +6,7 @@ Quick-start memory file for constraints, invariants, and daily commands.
 
 ## Current Stack
 
-- Frontend: React + TypeScript + Vite
+- Frontend: React 19 + TypeScript + Vite, Radix UI, Zustand
 - Desktop shell: Tauri v2
 - Rust crates:
   - `spatia_engine` (core data + geospatial logic)
@@ -31,12 +31,16 @@ Quick-start memory file for constraints, invariants, and daily commands.
 2. DuckDB extensions are connection-scoped; load per connection.
 3. Overture release pinning is required for reproducible extracts.
 4. Temp DuckDB test cleanup should remove `.duckdb`, `.wal`, `.wal.lck`.
-5. Analysis SQL execution currently validates prefix only (`CREATE [OR REPLACE] VIEW analysis_result AS ...`); deeper hardening remains a backlog item.
+5. Analysis SQL execution validates prefix (`CREATE [OR REPLACE] VIEW analysis_result AS ...`) and scans the body for 15 blocked keyword patterns (DROP, TRUNCATE, DELETE, ALTER, GRANT, etc.) using word-boundary regexes to avoid false positives on column names.
+6. User-facing DB path inputs are removed; app flows use fixed DB file path `src-tauri/spatia.duckdb`.
+7. Engine `geocode` command is now batch-first and local-first: it uses local fuzzy matching from Overture lookup tables before Geocodio fallback, and returns confidence/source metadata per result.
 
 ## Core Paths
 
-- Frontend pages/components: `src/pages`, `src/components`
-- Focus/context system: `src/lib/widgetStore.ts`, `src/lib/useFocusGuard.ts`, `src/lib/aiContext.ts`
+- App shell: `src/App.tsx` — three-component flat layout (MapView, FileList, ChatCard)
+- Components: `src/components/MapView.tsx`, `src/components/FileList.tsx`, `src/components/ChatCard.tsx`
+- State store: `src/lib/appStore.ts` (Zustand — tables, chatMessages, analysisGeoJson, tableGeoJson, visualizationType, selectedTablesForChat, apiConfig)
+- Map actions: `src/lib/mapActions.ts` (executeMapActions over MapLibre ref)
 - Tauri commands: `src-tauri/src/lib.rs`
 - Engine core: `src-tauri/crates/engine/src`
 - AI prompts/client: `src-tauri/crates/ai/src`
@@ -50,6 +54,4 @@ Quick-start memory file for constraints, invariants, and daily commands.
 
 ## Active Risks
 
-- Deck/loaders bundler warning in production build should be resolved/verified.
-- Visualization command support is only scatter-level in the Deck.gl mapping path.
-- AI env setup (`SPATIA_GEMINI_API_KEY`) and local PMTiles presence need clearer UX diagnostics.
+- AI env setup (`SPATIA_GEMINI_API_KEY`) and local PMTiles presence need clearer UX diagnostics (partially addressed with API key banners in FileList/ChatCard).

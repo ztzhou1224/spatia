@@ -1,0 +1,31 @@
+name,address,city,state,zip,type,avg_rating,review_count,has_wifi,year_opened
+Starbucks Reserve Roastery,1124 Pike St,Seattle,WA,98101,chain,4.6,9842,true,2014
+Victrola Coffee Roasters,310 E Pike Street,seattle,WA,98122,Independent,4.5,2134,true,2000
+Stimulus Coffee + Lounge,1620 Broadway,Seattle,WA,98122,independent,4.3,876,true,2011
+Analog Coffee,235 Summit Ave E,Seattle,WA,98102,independent,4.7,1203,true,2013
+Caffe Vita Capitol Hill,1005 E Pike st,SEATTLE,WA,98122,Independent,4.4,1890,true,1995
+Starbucks,1600 E Olive Way,Seattle,WA,98102,Chain,3.9,543,true,2001
+Espresso Vivace,532 Broadway E,Seattle,wa,98102,independent,4.6,3241,true,1988
+Lighthouse Coffee,400 Occidental Ave S,Seattle,WA,98104,independent,4.5,2087,true,2017
+Elm Coffee Roasters,240 2nd Ave Ext S,Seattle,WA,98104,independent,4.7,1654,true,2015
+Starbucks,1730 1st Avenue,Seattle,WA,98101,chain,3.8,412,true,2003
+Cherry Street Coffee,1212 Western Ave,Seattle,WA,98101,independent,4.2,987,false,1999
+Monorail Espresso,520 Pike St.,Seattle,WA,98101,independent,4.4,2398,false,1980
+Caffe Umbria,320 Occidental Ave S,Seattle,WA,98104,independent,4.5,1732,true,1986
+Miro Tea,5405 Ballard Ave NW,Seattle,WA,98107,Independent,4.6,765,true,2005
+Cafe Mox,5105 Leary Ave NW,seattle,WA,98107,independent,4.3,432,true,2014
+Starbucks,5000 20th Ave NW,Seattle,WA,98107,chain,3.7,298,true,2008
+Zoka Coffee,2200 N 56th St,Seattle,WA,98103,independent,4.5,1876,true,1996
+Milstead & Co.,770 N 34th Street,Seattle,WA,98103,independent,4.7,2543,true,2012
+Lighthouse Coffee Fremont,513 N 36th St,Seattle,WA,98103,independent,4.4,1102,true,2019
+Lighthouse Coffee University District,4552 University Way NE,Seattle,WA,98105,independent,4.3,934,true,2020
+Caffe Ladro,4209 University Way NE,Seattle,WA,98105,Chain,4.2,678,true,2004
+Solstice Coffee,4116 University Way NE,Seattle,WA,98105,independent,4.1,521,false,2009
+Starbucks,4357 University Way NE,Seattle,WA,98105,chain,3.6,387,true,2002
+Roy Street Coffee & Tea,700 Broadway E,Seattle,WA,98102,chain,4.0,1203,true,2010
+Herkimer Coffee,7320 Greenwood Ave N,Seattle,WA,98103,independent,4.5,1445,true,2002
+Lighthouse Coffee Ballard,2218 NW Market St,Seattle,WA,98107,independent,4.4,876,true,2021
+Tougo Coffee,1410 18th Ave,Seattle,WA,98122,independent,4.6,943,true,2008
+Panama Hotel Tea & Coffee,605 S Main St,Seattle,WA,98104,independent,4.7,2876,false,2003
+Chocolati Cafe,1716 N 45th St,Seattle,WA,98103,independent,4.3,654,true,2003
+Caffe Vita Fremont,3245 Fremont Ave N,Seattle,WA,98103,Independent,4.4,1123,true,2007

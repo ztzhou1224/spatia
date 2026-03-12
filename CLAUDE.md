@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What Is Spatia
 
-Spatia is a desktop GIS app (Tauri + React + Rust/DuckDB) supporting CSV ingestion, Overture-backed local geocoding, PMTiles map rendering, and schema-aware AI analysis with a widget focus/context system for map-centric chat.
+Spatia is a desktop GIS app (Tauri + React + Rust/DuckDB) supporting CSV ingestion, Overture-backed local geocoding, PMTiles map rendering, and schema-aware AI analysis via a map-centric chat interface.
 
 ## Commands
 
@@ -44,7 +44,7 @@ bash src-tauri/scripts/build_overture_pmtiles.sh ./src-tauri/spatia.duckdb place
 
 ### Stack
 
-- **Frontend**: React 19 + TypeScript + Vite, TanStack Router, Zustand, Radix UI
+- **Frontend**: React 19 + TypeScript + Vite, Zustand, Radix UI
 - **Map**: MapLibre GL + PMTiles vector tiles + Deck.gl overlays
 - **Desktop shell**: Tauri v2 (command bridge between React and Rust)
 - **Rust workspace** (`src-tauri/`):
@@ -61,13 +61,15 @@ bash src-tauri/scripts/build_overture_pmtiles.sh ./src-tauri/spatia.duckdb place
 
 **Geocoding**: Engine `geocode` is batch-first and local-first — fuzzy match against local Overture lookup table, then Geocodio HTTP fallback with persistent `geocode_cache` table. Returns confidence/source metadata per result.
 
-**Map rendering**: MapLibre consumes PMTiles sources. Layer visibility is controlled in the frontend and reflected into widget metadata via Zustand.
+**Map rendering**: MapLibre consumes PMTiles sources. `MapView` exposes a `MapViewHandle` ref (`getMap`) that `ChatCard` uses to execute imperative map actions (fly-to, fit-bounds, popups) via `executeMapActions` in `src/lib/mapActions.ts`.
 
 **Overture extract**: `overture_extract` downloads bounded Overture parquet from S3 (via `httpfs`) into DuckDB tables used for search and geocoding.
 
-### Focus/context system
+### UI layout and state
 
-The widget store (`src/lib/widgetStore.ts`) tracks widget registry, app-level focus, and metadata. `useFocusGuard` captures pointer-down focus per widget. The analysis chat derives its context from `lastNonChatFocusedWidgetId` via `buildAIContext` (`src/lib/aiContext.ts`). Details in `widget-focus-system.md`.
+The app shell (`src/App.tsx`) renders three components in a flat layout: `MapView` (full-bleed map), `FileList` (right panel — table management, CSV upload, geocoding), and `ChatCard` (floating chat bar — AI analysis). There is no router; the app is a single view.
+
+State is managed in `src/lib/appStore.ts` (Zustand). The store holds `tables`, `chatMessages`, `analysisGeoJson`, and `mapActions`. `MapView` reads `analysisGeoJson` directly from the store to render result layers. `ChatCard` receives the `MapViewHandle` ref via props to call `executeMapActions` after each AI turn.
 
 ### Tauri command surface (`src-tauri/src/lib.rs`)
 
@@ -86,7 +88,7 @@ The widget store (`src/lib/widgetStore.ts`) tracks widget registry, app-level fo
 - Overture release must be pinned for reproducible extracts (`SPATIA_OVERTURE_RELEASE` env var or default in engine).
 - Temp DuckDB files in tests must clean up `.duckdb`, `.wal`, and `.wal.lck`.
 - `PRAGMA table_info` boolean fields map to `bool` (not `BOOLEAN` string).
-- Active sidebar navigation exposes only **Map** and **Upload** routes (Schema route is implemented but removed from navigation).
+- The app is a single-view layout (no router/sidebar). There are no separate page routes.
 - DB file path is fixed at `src-tauri/spatia.duckdb`; no user-facing path input.
 
 ## Environment Variables

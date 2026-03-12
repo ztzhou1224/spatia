@@ -11,8 +11,8 @@ pub use cleaner::{clean_raw_staging, clean_table, CleanResult};
 pub use client::{GeminiClient, DEFAULT_MODEL};
 #[cfg(feature = "gemini")]
 pub use prompts::{
-    build_analysis_chat_system_prompt, build_analysis_sql_prompt, build_clean_prompt,
-    build_visualization_command_prompt,
+    build_analysis_chat_system_prompt, build_analysis_retry_prompt, build_analysis_sql_prompt,
+    build_clean_prompt, build_unified_chat_prompt, build_visualization_command_prompt,
 };
 
 /// Shared result type for the AI crate.

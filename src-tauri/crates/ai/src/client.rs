@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error};
 
 use crate::AiResult;
 
@@ -6,7 +7,7 @@ const GEMINI_API_BASE: &str =
     "https://generativelanguage.googleapis.com/v1beta/models";
 
 /// Default Gemini model used when none is specified.
-pub const DEFAULT_MODEL: &str = "gemini-2.0-flash";
+pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
 
 // ── Request / response shapes ────────────────────────────────────────────────
 
@@ -23,6 +24,17 @@ struct Content<'a> {
 #[derive(Serialize)]
 struct Part<'a> {
     text: &'a str,
+}
+
+#[derive(Serialize)]
+struct GenerationConfig {
+    response_mime_type: &'static str,
+}
+
+#[derive(Serialize)]
+struct GenerateRequestWithConfig<'a> {
+    contents: Vec<Content<'a>>,
+    generation_config: GenerationConfig,
 }
 
 #[derive(Deserialize)]
@@ -94,6 +106,67 @@ impl GeminiClient {
         &self.model
     }
 
+    /// Send `prompt` to the Gemini `generateContent` endpoint with
+    /// `response_mime_type: "application/json"` and return the first text
+    /// response candidate.
+    pub async fn generate_json(&self, prompt: &str) -> AiResult<String> {
+        let url = format!(
+            "{}/{model}:generateContent?key={key}",
+            GEMINI_API_BASE,
+            model = self.model,
+            key = self.api_key,
+        );
+        // Safe URL for logging — never expose the API key.
+        let log_url = format!("{}/{model}:generateContent?key=[REDACTED]", GEMINI_API_BASE, model = self.model);
+
+        debug!(model = %self.model, prompt_len = prompt.len(), "generate_json: sending JSON-mode request to Gemini");
+
+        let body = GenerateRequestWithConfig {
+            contents: vec![Content {
+                parts: vec![Part { text: prompt }],
+            }],
+            generation_config: GenerationConfig {
+                response_mime_type: "application/json",
+            },
+        };
+
+        let response = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .inspect_err(|e| {
+                let redacted = e.to_string().replace(self.api_key.as_str(), "[REDACTED]");
+                error!(model = %self.model, url = %log_url, error = %redacted, "generate_json: HTTP request failed");
+            })?
+            .error_for_status()
+            .inspect_err(|e| {
+                let redacted = e.to_string().replace(self.api_key.as_str(), "[REDACTED]");
+                error!(model = %self.model, url = %log_url, error = %redacted, "generate_json: Gemini API returned error status");
+            })?;
+
+        let parsed: GenerateResponse = response.json().await?;
+
+        let result = parsed
+            .candidates
+            .into_iter()
+            .next()
+            .and_then(|c| c.content.parts.into_iter().next())
+            .map(|p| p.text)
+            .ok_or_else(|| -> Box<dyn std::error::Error + Send + Sync> {
+                "Gemini returned no text candidates".into()
+            });
+
+        if let Ok(ref text) = result {
+            debug!(model = %self.model, response_len = text.len(), "generate_json: received response");
+        } else {
+            error!(model = %self.model, "generate_json: no candidates in response");
+        }
+
+        result
+    }
+
     /// Send `prompt` to the Gemini `generateContent` endpoint and return the
     /// first text response candidate.
     pub async fn generate(&self, prompt: &str) -> AiResult<String> {
@@ -105,6 +178,10 @@ impl GeminiClient {
         );
         // Note: the Gemini REST API requires the key as a query parameter (?key=…).
         // This is the only supported authentication method for the v1beta endpoint.
+        // Safe URL for logging — never expose the API key.
+        let log_url = format!("{}/{model}:generateContent?key=[REDACTED]", GEMINI_API_BASE, model = self.model);
+
+        debug!(model = %self.model, prompt_len = prompt.len(), "generate: sending request to Gemini");
 
         let body = GenerateRequest {
             contents: vec![Content {
@@ -117,18 +194,36 @@ impl GeminiClient {
             .post(&url)
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .inspect_err(|e| {
+                let redacted = e.to_string().replace(self.api_key.as_str(), "[REDACTED]");
+                error!(model = %self.model, url = %log_url, error = %redacted, "generate: HTTP request failed");
+            })?
+            .error_for_status()
+            .inspect_err(|e| {
+                let redacted = e.to_string().replace(self.api_key.as_str(), "[REDACTED]");
+                error!(model = %self.model, url = %log_url, error = %redacted, "generate: Gemini API returned error status");
+            })?;
 
         let parsed: GenerateResponse = response.json().await?;
 
-        parsed
+        let result = parsed
             .candidates
             .into_iter()
             .next()
             .and_then(|c| c.content.parts.into_iter().next())
             .map(|p| p.text)
-            .ok_or_else(|| "Gemini returned no text candidates".into())
+            .ok_or_else(|| -> Box<dyn std::error::Error + Send + Sync> {
+                "Gemini returned no text candidates".into()
+            });
+
+        if let Ok(ref text) = result {
+            debug!(model = %self.model, response_len = text.len(), "generate: received response");
+        } else {
+            error!(model = %self.model, "generate: no candidates in response");
+        }
+
+        result
     }
 }
 

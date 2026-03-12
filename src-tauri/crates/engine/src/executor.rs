@@ -1,6 +1,6 @@
 use crate::{
-    geocode_addresses, ingest_csv, ingest_csv_to_table, overture_extract_to_table,
-    overture_geocode, overture_search, table_schema, BBox, EngineResult,
+    geocode_batch, ingest_csv, ingest_csv_to_table, overture_extract_to_table, overture_geocode,
+    overture_search, table_schema, BBox, EngineResult,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -104,7 +104,7 @@ pub fn execute_command(command: &str) -> EngineResult<String> {
             Ok(json)
         }
         Command::Geocode { db_path, addresses } => {
-            let result = geocode_addresses(&db_path, &addresses)?;
+            let result = geocode_batch(&db_path, &addresses)?;
             let json = serde_json::to_string(&result)?;
             Ok(json)
         }
@@ -364,8 +364,8 @@ mod tests {
 
     #[test]
     fn parse_geocode_single_address() {
-        let command =
-            parse_command("geocode ./spatia.duckdb \"123 Main St, Springfield, IL\"").expect("parse");
+        let command = parse_command("geocode ./spatia.duckdb \"123 Main St, Springfield, IL\"")
+            .expect("parse");
         assert_eq!(
             command,
             Command::Geocode {
@@ -377,8 +377,7 @@ mod tests {
 
     #[test]
     fn parse_geocode_multiple_addresses() {
-        let command =
-            parse_command("geocode ./spatia.duckdb \"addr1\" \"addr2\"").expect("parse");
+        let command = parse_command("geocode ./spatia.duckdb \"addr1\" \"addr2\"").expect("parse");
         assert_eq!(
             command,
             Command::Geocode {
