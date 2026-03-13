@@ -124,6 +124,23 @@ Before finalizing any test work:
 4. Confirm temp files are cleaned up in all test paths (including panic/failure paths).
 5. Check that test names are descriptive and follow existing conventions in the codebase.
 
+## Commit & Push Workflow
+
+Always commit and push after completing each change. Use the `/commit` slash command or follow this process:
+1. Stage specific files (not `git add -A`)
+2. Use conventional commit format: `type(scope): message` (match existing style: `fix(bench):...`, `feat(geocode):...`)
+3. End with `Co-Authored-By: Claude <noreply@anthropic.com>`
+4. Push to remote
+
+## Available Slash Commands
+
+- `/quality-gate` — Run the full build + test + clippy quality gate
+- `/review-changes` — Review uncommitted changes against project conventions
+- `/verify-app` — Take a screenshot of the running app and describe its state
+- `/explore-crate <name>` — Explore a Rust crate's public API (e.g., `/explore-crate engine`)
+- `/test-module <name>` — Run tests for a specific crate or test filter
+- `/commit` — Analyze changes, create conventional commit, and push
+
 **Update your agent memory** as you discover test patterns, common failure modes, flaky tests, testing conventions, coverage gaps, and recurring quality issues in this codebase. Write concise notes about what you found and where.
 
 Examples of what to record:

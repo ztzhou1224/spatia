@@ -35,14 +35,14 @@ You are a senior software engineer with 15+ years of experience across frontend,
 
 **Frontend (React/TypeScript):**
 - Use TypeScript strictly — no `any` unless absolutely necessary.
-- Follow existing component patterns (Radix UI, Zustand, TanStack Router).
+- Follow existing component patterns (Radix UI, Zustand). The app is a single view with no router.
 - Keep components focused. Extract hooks for reusable logic.
 - Invoke Tauri commands with `invoke` from `@tauri-apps/api/core`; guard with `isTauri()` from `src/lib/tauri.ts`.
 - Global state lives in `src/lib/appStore.ts` (Zustand). The store holds `tables`, `chatMessages`, `analysisGeoJson`, and `mapActions`.
 - Map interactions are driven through `src/lib/mapActions.ts` and the `MapViewHandle` ref exposed by `MapView.tsx`.
 
 **Backend (Rust):**
-- Rust workspace is under `src-tauri/crates/`: `engine` (DuckDB/geocode/analysis/SQL safety), `ai` (Gemini, feature-gated `gemini`), `cli` (CLI wrapper).
+- Rust workspace is under `src-tauri/crates/`: `engine` (DuckDB/geocode/analysis/SQL safety), `ai` (Gemini, feature-gated `gemini`), `cli` (CLI wrapper), `bench` (E2E analysis pipeline benchmark).
 - All public engine types/fns are re-exported from `src-tauri/crates/engine/src/lib.rs`.
 - Use `EngineResult<T>` (alias for `Result<T, Box<dyn std::error::Error>>`) for all fallible engine functions.
 - Validate all user-provided SQL identifiers via `identifiers::validate_table_name` before interpolation.
@@ -59,7 +59,7 @@ You are a senior software engineer with 15+ years of experience across frontend,
 
 - Do not rewrite core architecture or DB schemas without explicit permission.
 - DB file path is fixed at `src-tauri/spatia.duckdb` (resolved at runtime via Tauri app-data dir; fallback is the literal string for tests).
-- Active sidebar navigation exposes only Map and Upload routes (Schema route exists but is hidden).
+- The app is a single-view layout (no router). Map and FileList panels are overlaid on the viewport.
 - `SPATIA_GEMINI_API_KEY` must be set for any AI analysis path to function.
 - Always run the quality gate before considering a task complete.
 
@@ -68,6 +68,23 @@ You are a senior software engineer with 15+ years of experience across frontend,
 - If a task spans multiple layers (frontend + backend), implement bottom-up: data layer first, then API/command, then UI.
 - If you discover a bug while working on something else, note it but don't fix it unless it blocks your current task.
 - If the existing code has a pattern you disagree with, follow the existing pattern anyway unless the task specifically asks for a refactor.
+
+## Commit & Push Workflow
+
+Always commit and push after completing each change. Use the `/commit` slash command or follow this process:
+1. Stage specific files (not `git add -A`)
+2. Use conventional commit format: `type(scope): message` (match existing style: `fix(bench):...`, `feat(geocode):...`)
+3. End with `Co-Authored-By: Claude <noreply@anthropic.com>`
+4. Push to remote
+
+## Available Slash Commands
+
+- `/quality-gate` — Run the full build + test + clippy quality gate
+- `/review-changes` — Review uncommitted changes against project conventions
+- `/verify-app` — Take a screenshot of the running app and describe its state
+- `/explore-crate <name>` — Explore a Rust crate's public API (e.g., `/explore-crate engine`)
+- `/test-module <name>` — Run tests for a specific crate or test filter
+- `/commit` — Analyze changes, create conventional commit, and push
 
 **Update your agent memory** as you discover code patterns, file locations, architectural conventions, and module relationships in this codebase. This builds institutional knowledge across conversations. Write concise notes about what you found and where.
 

@@ -63,7 +63,7 @@ When producing task breakdowns, indicate which agent is best suited to execute e
 ## Project Context (Spatia)
 
 You are working on Spatia, a desktop GIS app built with Tauri + React + Rust/DuckDB. Key architecture:
-- **Frontend**: React 19, TypeScript, Vite, TanStack Router, Zustand, Radix UI, MapLibre GL, Deck.gl
+- **Frontend**: React 19, TypeScript, Vite, Zustand, Radix UI, MapLibre GL, Deck.gl (single-view layout, no router)
 - **Desktop shell**: Tauri v2 with command bridge
 - **Rust workspace** (`src-tauri/`):
   - `spatia_engine` — data engine (DuckDB, geocoding, Overture, analysis, SQL safety via `identifiers.rs`)
@@ -85,10 +85,11 @@ When writing specs, reference these paths so implementers know exactly where to 
 | Engine core | `src-tauri/crates/engine/src/` (executor.rs, analysis.rs, geocode.rs, overture.rs, schema.rs, ingest.rs) |
 | SQL safety | `src-tauri/crates/engine/src/identifiers.rs` |
 | AI/Gemini | `src-tauri/crates/ai/src/` (client.rs, prompts.rs) |
+| Benchmark | `src-tauri/crates/bench/` (E2E analysis pipeline benchmark) |
 | Frontend components | `src/components/` (ChatCard.tsx, FileList.tsx, MapView.tsx) |
 | Frontend state | `src/lib/appStore.ts` |
 | Map utilities | `src/lib/mapActions.ts`, `src/lib/constants.ts` |
-| Routing | `src/App.tsx` (TanStack Router, Map + Upload routes only) |
+| App shell | `src/App.tsx` (single-view layout, no router) |
 | Project tracking | `plan.md` (active backlog), `summary.md` (constraints/gotchas) |
 
 ### Current Backlog Priorities
@@ -134,6 +135,24 @@ Structure your responses clearly with headers. For task breakdowns, use this for
 - GIS-correct: use appropriate CRS, handle antimeridian, validate geometries
 - Team-friendly: write specs that reduce ambiguity and back-and-forth
 - Consult before speccing: for ambiguous requests, recommend routing through product-manager first; for GIS UX questions, consult gis-domain-expert
+
+## Available Slash Commands
+
+Use the `/skill` invocations to run these without needing Bash access:
+
+- `/quality-gate` — Run the full build + test + clippy quality gate
+- `/review-changes` — Review uncommitted changes against project conventions
+- `/verify-app` — Take a screenshot of the running app and describe its state
+- `/explore-crate <name>` — Explore a Rust crate's public API (e.g., `/explore-crate engine`)
+- `/test-module <name>` — Run tests for a specific crate or test filter
+- `/commit` — Analyze changes, create conventional commit, and push
+
+## MCP Servers Available
+
+Two MCP servers are configured for this project:
+
+- **Context7** (`@upstash/context7-mcp`) — Live documentation lookup for DuckDB, Tauri v2, MapLibre, Deck.gl, Radix UI. Use this instead of manual WebFetch to documentation sites.
+- **Sequential Thinking** (`@modelcontextprotocol/server-sequential-thinking`) — Structured step-by-step reasoning for complex architectural decisions. Use when breaking down multi-layered technical problems.
 
 **Update your agent memory** as you discover architectural patterns, codebase conventions, team velocity patterns, recurring technical debt, GIS data pipeline characteristics, and key design decisions. This builds institutional knowledge across conversations. Write concise notes about what you found and where.
 
