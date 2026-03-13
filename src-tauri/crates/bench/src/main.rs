@@ -41,6 +41,14 @@ struct Cli {
     /// Write JSON report to this file.
     #[arg(long)]
     output: Option<String>,
+
+    /// Temperature for AI generation (0.0 = deterministic, 1.0 = creative).
+    #[arg(long)]
+    temperature: Option<f32>,
+
+    /// Path to a previous benchmark report for regression comparison.
+    #[arg(long)]
+    compare: Option<String>,
 }
 
 #[tokio::main]
@@ -102,7 +110,11 @@ async fn main() {
         eprintln!("ERROR: SPATIA_GEMINI_API_KEY not set. Use --dry-run to validate corpus.");
         std::process::exit(1);
     });
-    let client = GeminiClient::with_model(api_key, &cli.model);
+    let mut client = GeminiClient::with_model(api_key, &cli.model);
+    if let Some(temp) = cli.temperature {
+        client = client.with_temperature(temp);
+        println!("  Temperature: {}", temp);
+    }
 
     let corpus_dir = corpus_path
         .parent()
@@ -143,6 +155,14 @@ async fn main() {
     match report.write_json(&output_path) {
         Ok(()) => info!("JSON report written to {}", output_path),
         Err(e) => warn!("failed to write JSON report: {}", e),
+    }
+
+    // R8: Regression comparison
+    if let Some(compare_path) = &cli.compare {
+        match report::load_previous_report(compare_path) {
+            Ok(prev) => report::print_regression_comparison(&prev, &report),
+            Err(e) => warn!("failed to load comparison report '{}': {}", compare_path, e),
+        }
     }
 
     if report.summary.failed > 0 {

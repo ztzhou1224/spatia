@@ -1,11 +1,17 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
-use spatia_ai::{build_analysis_retry_prompt, build_unified_chat_prompt, GeminiClient};
-use spatia_engine::{execute_analysis_sql_to_geojson, ingest_csv_to_table, table_schema};
+use spatia_ai::{
+    build_analysis_retry_prompt_with_samples, build_unified_chat_prompt_with_samples,
+    ColumnSamples, GeminiClient,
+};
+use spatia_engine::{
+    execute_analysis_sql_to_geojson, fetch_column_samples, ingest_csv_to_table, table_schema,
+};
 
 use crate::corpus::TestCase;
 
@@ -22,7 +28,7 @@ pub enum TestOutcome {
     SetupError(String),
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TimingMs {
     pub total_ms: u64,
     pub ai_ms: u64,
@@ -30,7 +36,7 @@ pub struct TimingMs {
     pub setup_ms: u64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestResult {
     pub name: String,
     pub description: String,
@@ -128,13 +134,27 @@ pub async fn run_test(ctx: &RunnerContext, tc: &TestCase) -> TestResult {
     };
     let table_schemas = vec![(tc.setup_table.clone(), schema)];
 
+    // Fetch sample values for low-cardinality columns (R1)
+    let mut all_samples: HashMap<String, ColumnSamples> = HashMap::new();
+    match fetch_column_samples(&db_path, &tc.setup_table) {
+        Ok(samples) => {
+            if !samples.is_empty() {
+                debug!(test = %tc.name, columns = samples.len(), "run_test: fetched column samples");
+                all_samples.insert(tc.setup_table.clone(), samples);
+            }
+        }
+        Err(e) => {
+            warn!(test = %tc.name, error = %e, "run_test: failed to fetch column samples, proceeding without");
+        }
+    }
+
     // AI + SQL loop with retry
     let timeout = std::time::Duration::from_secs(
         tc.timeout_secs.unwrap_or(ctx.default_timeout_secs),
     );
     let outcome = tokio::time::timeout(
         timeout,
-        ai_sql_loop(ctx, tc, &db_path, &table_schemas, &mut detail),
+        ai_sql_loop(ctx, tc, &db_path, &table_schemas, &all_samples, &mut detail),
     )
     .await
     .unwrap_or_else(|_| {
@@ -153,22 +173,42 @@ async fn ai_sql_loop(
     tc: &TestCase,
     db_path: &str,
     table_schemas: &[(String, Vec<spatia_engine::TableColumn>)],
+    column_samples: &HashMap<String, ColumnSamples>,
     detail: &mut RunDetail,
 ) -> TestOutcome {
     let mut last_sql: Option<String> = None;
     let mut last_error: Option<String> = None;
 
+    let samples_opt = if column_samples.is_empty() {
+        None
+    } else {
+        Some(column_samples)
+    };
+
     for attempt in 0..=MAX_RETRIES {
         detail.round_trips = attempt + 1;
 
+        // Build conversation history from test case context (R6)
+        let history: Vec<serde_json::Value> = tc
+            .conversation_history
+            .iter()
+            .map(|turn| {
+                serde_json::json!({
+                    "role": turn.role,
+                    "content": turn.content
+                })
+            })
+            .collect();
+
         let prompt = if attempt == 0 {
-            build_unified_chat_prompt(table_schemas, &tc.query, &[])
+            build_unified_chat_prompt_with_samples(table_schemas, &tc.query, &history, samples_opt)
         } else {
-            build_analysis_retry_prompt(
+            build_analysis_retry_prompt_with_samples(
                 &tc.query,
                 table_schemas,
                 last_sql.as_deref().unwrap_or(""),
                 last_error.as_deref().unwrap_or("unknown error"),
+                samples_opt,
             )
         };
 

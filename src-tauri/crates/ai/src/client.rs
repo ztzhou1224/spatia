@@ -29,12 +29,25 @@ struct Part<'a> {
 #[derive(Serialize)]
 struct GenerationConfig {
     response_mime_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
 struct GenerateRequestWithConfig<'a> {
     contents: Vec<Content<'a>>,
     generation_config: GenerationConfig,
+}
+
+#[derive(Serialize)]
+struct TemperatureConfig {
+    temperature: f32,
+}
+
+#[derive(Serialize)]
+struct GenerateRequestWithTemperature<'a> {
+    contents: Vec<Content<'a>>,
+    generation_config: TemperatureConfig,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +82,7 @@ pub struct GeminiClient {
     api_key: String,
     model: String,
     http: reqwest::Client,
+    temperature: Option<f32>,
 }
 
 impl GeminiClient {
@@ -78,6 +92,7 @@ impl GeminiClient {
             api_key: api_key.into(),
             model: DEFAULT_MODEL.to_string(),
             http: reqwest::Client::new(),
+            temperature: None,
         }
     }
 
@@ -87,7 +102,14 @@ impl GeminiClient {
             api_key: api_key.into(),
             model: model.into(),
             http: reqwest::Client::new(),
+            temperature: None,
         }
+    }
+
+    /// Set the temperature for generation (0.0 = deterministic, 1.0 = creative).
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
+        self
     }
 
     /// Try to build a client from the `SPATIA_GEMINI_API_KEY` environment
@@ -127,6 +149,7 @@ impl GeminiClient {
             }],
             generation_config: GenerationConfig {
                 response_mime_type: "application/json",
+                temperature: self.temperature,
             },
         };
 
@@ -183,16 +206,22 @@ impl GeminiClient {
 
         debug!(model = %self.model, prompt_len = prompt.len(), "generate: sending request to Gemini");
 
-        let body = GenerateRequest {
-            contents: vec![Content {
-                parts: vec![Part { text: prompt }],
-            }],
+        let contents = vec![Content {
+            parts: vec![Part { text: prompt }],
+        }];
+
+        let request_builder = if let Some(temp) = self.temperature {
+            let body = GenerateRequestWithTemperature {
+                contents,
+                generation_config: TemperatureConfig { temperature: temp },
+            };
+            self.http.post(&url).json(&body)
+        } else {
+            let body = GenerateRequest { contents };
+            self.http.post(&url).json(&body)
         };
 
-        let response = self
-            .http
-            .post(&url)
-            .json(&body)
+        let response = request_builder
             .send()
             .await
             .inspect_err(|e| {

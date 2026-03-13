@@ -32,6 +32,7 @@ pub use overture::overture_geocode;
 pub use overture::overture_search;
 pub use overture::BBox;
 pub use overture::OVERTURE_RELEASE;
+pub use schema::fetch_column_samples;
 pub use schema::raw_staging_schema;
 pub use schema::table_schema;
 pub use schema::TableColumn;

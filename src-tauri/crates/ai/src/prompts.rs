@@ -1,5 +1,36 @@
 use spatia_engine::TableColumn;
 
+use std::collections::HashMap;
+
+/// Type alias for column sample values: column_name → list of distinct values.
+pub type ColumnSamples = HashMap<String, Vec<String>>;
+
+/// Format the schema section with optional sample values for each column.
+fn format_schema_with_samples(
+    table_schemas: &[(String, Vec<TableColumn>)],
+    all_samples: Option<&HashMap<String, ColumnSamples>>,
+) -> String {
+    let mut section = String::new();
+    for (table_name, schema) in table_schemas {
+        section.push_str(&format!("\n### Table: {}\n", table_name));
+        let table_samples = all_samples.and_then(|s| s.get(table_name));
+        for col in schema {
+            section.push_str(&format!(
+                "  - {} {} (not_null: {}, primary_key: {})",
+                col.name, col.data_type, col.notnull, col.primary_key
+            ));
+            if let Some(samples) = table_samples.and_then(|s| s.get(&col.name)) {
+                if !samples.is_empty() {
+                    let quoted: Vec<String> = samples.iter().map(|v| format!("\"{}\"", v)).collect();
+                    section.push_str(&format!(" — sample values: {}", quoted.join(", ")));
+                }
+            }
+            section.push('\n');
+        }
+    }
+    section
+}
+
 /// Build a system + user prompt that instructs the AI to return DuckDB `UPDATE`
 /// statements which clean the data in `table_name`.
 ///
@@ -102,16 +133,24 @@ pub fn build_analysis_retry_prompt(
     failed_sql: &str,
     error_message: &str,
 ) -> String {
-    let mut schema_section = String::new();
-    for (table_name, schema) in table_schemas {
-        schema_section.push_str(&format!("\n### Table: {}\n", table_name));
-        for col in schema {
-            schema_section.push_str(&format!(
-                "  - {} {} (not_null: {}, primary_key: {})\n",
-                col.name, col.data_type, col.notnull, col.primary_key
-            ));
-        }
-    }
+    build_analysis_retry_prompt_with_samples(
+        user_question,
+        table_schemas,
+        failed_sql,
+        error_message,
+        None,
+    )
+}
+
+/// Retry prompt with optional column sample values.
+pub fn build_analysis_retry_prompt_with_samples(
+    user_question: &str,
+    table_schemas: &[(String, Vec<TableColumn>)],
+    failed_sql: &str,
+    error_message: &str,
+    column_samples: Option<&HashMap<String, ColumnSamples>>,
+) -> String {
+    let schema_section = format_schema_with_samples(table_schemas, column_samples);
 
     format!(
         r#"The following DuckDB SQL failed to execute. Fix it and return a corrected version.
@@ -135,7 +174,9 @@ pub fn build_analysis_retry_prompt(
 4. Return ONLY the corrected SQL — no markdown, no explanation.
 5. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) — they do not exist in DuckDB.
 6. DO NOT use ST_HexagonGrid, ST_SquareGrid, or ST_MakeEnvelope — they do not exist in DuckDB spatial.
-7. For heatmap/hexbin visualizations, just return rows with lat/lon columns — the frontend handles spatial aggregation.
+7. DO NOT use ST_Distance or ST_DWithin for distance calculations — DuckDB spatial does not support these on raw lat/lon pairs. Use Haversine formula instead.
+8. For heatmap/hexbin visualizations, just return rows with lat/lon columns — the frontend handles spatial aggregation.
+9. When filtering on categorical/enum columns, use the EXACT values shown in the sample values above. Do not guess or expand abbreviations.
 "#,
         question = user_question.trim(),
         schemas = schema_section,
@@ -278,16 +319,17 @@ pub fn build_unified_chat_prompt(
     user_message: &str,
     conversation_history: &[serde_json::Value],
 ) -> String {
-    let mut schema_section = String::new();
-    for (table_name, schema) in table_schemas {
-        schema_section.push_str(&format!("\n### Table: {}\n", table_name));
-        for col in schema {
-            schema_section.push_str(&format!(
-                "  - {} {} (not_null: {}, primary_key: {})\n",
-                col.name, col.data_type, col.notnull, col.primary_key
-            ));
-        }
-    }
+    build_unified_chat_prompt_with_samples(table_schemas, user_message, conversation_history, None)
+}
+
+/// Unified chat prompt with optional column sample values.
+pub fn build_unified_chat_prompt_with_samples(
+    table_schemas: &[(String, Vec<TableColumn>)],
+    user_message: &str,
+    conversation_history: &[serde_json::Value],
+    column_samples: Option<&HashMap<String, ColumnSamples>>,
+) -> String {
+    let schema_section = format_schema_with_samples(table_schemas, column_samples);
 
     // Format conversation history (last 10 turns)
     let mut history_section = String::new();
@@ -388,7 +430,11 @@ YOUR SQL MUST NEVER attempt spatial aggregation for these types. Just SELECT the
 The following functions DO NOT EXIST in DuckDB and will cause errors:
 - h3_latlng_to_cell, h3_cell_to_latlng, h3_cell_to_boundary — H3 is not available
 - ST_HexagonGrid, ST_SquareGrid, ST_MakeEnvelope — not available in DuckDB spatial
+- ST_Distance, ST_DWithin — do not work on raw lat/lon pairs; use Haversine formula for distance calculations
 - Any H3 or hex-grid function — these do not exist; the frontend handles hex binning
+
+## CRITICAL: Column value matching
+When filtering on categorical or enum columns, you MUST use the EXACT values shown in the "sample values" annotations in the schema above. Do NOT guess full-text labels for abbreviated values or vice versa. If no sample values are shown, query the data first or use ILIKE for flexible matching.
 
 Only include map_actions when relevant. sql can be empty string if no query is needed.
 "#,

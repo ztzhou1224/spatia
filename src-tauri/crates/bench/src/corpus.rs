@@ -23,6 +23,18 @@ pub struct TestCase {
     #[serde(default)]
     pub tags: Vec<String>,
     pub timeout_secs: Option<u64>,
+
+    /// Optional conversation history for multi-turn tests (R6).
+    /// Each entry is a JSON object with "role" and "content" fields.
+    #[serde(default)]
+    pub conversation_history: Vec<ConversationTurn>,
+}
+
+/// A single turn in a conversation history for multi-turn benchmark tests.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConversationTurn {
+    pub role: String,
+    pub content: String,
 }
 
 fn default_true() -> bool {

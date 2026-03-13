@@ -1,0 +1,16 @@
+business_name,address,city,state,zip,category,revenue,employee_count,founded_year
+  Acme Corp  ,123 Main St,seattle,WA,98101,Technology,$1200000,45,2015
+Beta Industries,456 Oak Ave,SEATTLE,wa,98102,manufacturing,850000,32,N/A
+"Gamma Solutions, LLC",789 Pine Rd,Seattle,WA,98103,technology,$3400000,120,2010
+delta services,  1010 Cedar Blvd  ,seattle,wa,98104,Healthcare,N/A,15,2018
+EPSILON TRADING CO,2020 Elm St,Seattle,WA,98105,Retail,$675000,8,2020
+ Zeta Analytics ,3030 Birch Ave,SEATTLE,Wa,98106,technology,$2100000,55,2012
+Eta Consulting,4040 Maple Dr,seattle,WA,98107,consulting,$980000,22,null
+Theta Manufacturing,5050 Walnut St,Seattle,WA,98108,Manufacturing,$4500000,200,2005
+Iota Health,6060 Cherry Ln,SEATTLE,wa,98109,healthcare,1500000,35,2019
+Kappa Retail,7070 Spruce Way,Seattle,WA,98110,retail,$320000,6,2021
+Lambda Tech,8080 Ash Ct,seattle,WA,98111,Technology,$8900000,300,2008
+Mu Foods,9090 Poplar Blvd,Seattle,WA,98112,Food & Beverage,$450000,12,2017
+Nu Design Studio,1111 Willow Ave,SEATTLE,wa,98113,Design,,18,2016
+Xi Transport,2222 Sycamore Dr,Seattle,WA,98114,Transportation,$1100000,40,2011
+Omicron Labs,3333 Redwood Rd,seattle,WA,98115,technology,$6700000,90,2009
