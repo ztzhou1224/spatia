@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     conn.execute_batch("INSTALL httpfs; LOAD httpfs")?;
 
     let overture_release = std::env::var("SPATIA_OVERTURE_RELEASE")
-        .unwrap_or_else(|_| "2025-01-22.0".to_string());
+        .unwrap_or_else(|_| "2026-02-18.0".to_string());
 
     // Seattle bounding box
     let bbox = "-122.4,47.5,-122.2,47.7";
@@ -51,23 +51,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         r#"
         SELECT
             id,
-            concat_ws(' ',
-                JSON_EXTRACT_STRING(addresses, '$[0].number'),
-                JSON_EXTRACT_STRING(addresses, '$[0].street'),
-                JSON_EXTRACT_STRING(addresses, '$[0].postal_city'),
-                JSON_EXTRACT_STRING(addresses, '$[0].postcode'),
-                JSON_EXTRACT_STRING(addresses, '$[0].country')
-            ) AS label,
-            ST_Y(ST_GeomFromWKB(geometry)) AS lat,
-            ST_X(ST_GeomFromWKB(geometry)) AS lon
+            trim(regexp_replace(
+                concat_ws(' ',
+                    coalesce(number, ''),
+                    coalesce(street, ''),
+                    coalesce(postal_city, ''),
+                    coalesce(postcode, ''),
+                    coalesce(country, '')
+                ),
+                '\s+',
+                ' '
+            )) AS label,
+            ST_Y(geometry) AS lat,
+            ST_X(geometry) AS lon
         FROM read_parquet(
-            's3://overturemaps-us-west-2/release/{release}/theme=addresses/type=address/*',
-            hive_partitioning=true
+            's3://overturemaps-us-west-2/release/{release}/theme=addresses/type=address/*'
         )
-        WHERE bbox.xmin >= {xmin}
-          AND bbox.xmax <= {xmax}
-          AND bbox.ymin >= {ymin}
-          AND bbox.ymax <= {ymax}
+        WHERE bbox.xmin <= {xmax} AND bbox.xmax >= {xmin}
+          AND bbox.ymin <= {ymax} AND bbox.ymax >= {ymin}
         ORDER BY random()
         LIMIT 500
         "#,
