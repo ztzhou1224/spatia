@@ -17,7 +17,7 @@
 [[tests]]
 name = "count_all_rows"
 description = "COUNT(*) on a full table"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "How many coffee shops are there in total?"
 expect_sql_contains = ["COUNT"]
@@ -27,7 +27,7 @@ tags = ["simple", "aggregation"]
 [[tests]]
 name = "group_by_type"
 description = "GROUP BY on a categorical column"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "How many coffee shops are there of each type?"
 expect_sql_contains = ["GROUP BY", "COUNT"]
@@ -37,7 +37,7 @@ tags = ["aggregation", "group_by"]
 [[tests]]
 name = "top5_by_reviews"
 description = "ORDER BY + LIMIT for top-N"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "Show me the top 5 coffee shops by number of reviews."
 expect_sql_contains = ["ORDER BY", "LIMIT"]
@@ -48,7 +48,7 @@ tags = ["simple", "filter", "limit"]
 [[tests]]
 name = "filter_high_rating"
 description = "WHERE clause with numeric comparison"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "Which coffee shops have a rating above 4.5?"
 expect_sql_contains = ["WHERE"]
@@ -59,7 +59,7 @@ tags = ["filter", "numeric"]
 [[tests]]
 name = "average_rating_by_type"
 description = "AVG aggregation grouped by category"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "What is the average rating for each type of coffee shop?"
 expect_sql_contains = ["AVG", "GROUP BY"]
@@ -71,7 +71,7 @@ tags = ["aggregation", "group_by"]
 [[tests]]
 name = "ev_count_by_make"
 description = "GROUP BY vehicle make"
-setup_csv = "../../data/wa_ev_registrations.csv"
+setup_csv = "../../../data/wa_ev_registrations.csv"
 setup_table = "ev_registrations"
 query = "How many EV registrations are there for each car make?"
 expect_sql_contains = ["GROUP BY", "COUNT"]
@@ -81,7 +81,7 @@ tags = ["aggregation", "group_by", "ev"]
 [[tests]]
 name = "ev_bev_only"
 description = "Filter on an enum column"
-setup_csv = "../../data/wa_ev_registrations.csv"
+setup_csv = "../../../data/wa_ev_registrations.csv"
 setup_table = "ev_registrations"
 query = "Show me only battery electric vehicles (BEV)."
 expect_sql_contains = ["WHERE"]
@@ -91,7 +91,7 @@ tags = ["filter", "ev"]
 [[tests]]
 name = "ev_top3_expensive"
 description = "ORDER BY price DESC LIMIT 3"
-setup_csv = "../../data/wa_ev_registrations.csv"
+setup_csv = "../../../data/wa_ev_registrations.csv"
 setup_table = "ev_registrations"
 query = "What are the top 3 most expensive EV models by base MSRP?"
 expect_sql_contains = ["ORDER BY", "LIMIT"]
@@ -101,7 +101,7 @@ tags = ["filter", "limit", "ev"]
 [[tests]]
 name = "ev_per_county"
 description = "COUNT per geographic grouping"
-setup_csv = "../../data/wa_ev_registrations.csv"
+setup_csv = "../../../data/wa_ev_registrations.csv"
 setup_table = "ev_registrations"
 query = "How many EV registrations per county?"
 expect_sql_contains = ["GROUP BY", "COUNT"]
@@ -113,7 +113,7 @@ tags = ["aggregation", "group_by", "geo", "ev"]
 [[tests]]
 name = "home_avg_price"
 description = "Single aggregate over full table"
-setup_csv = "../../data/king_county_home_sales.csv"
+setup_csv = "../../../data/king_county_home_sales.csv"
 setup_table = "home_sales"
 query = "What is the average sale price of homes?"
 expect_sql_contains = ["AVG"]
@@ -123,7 +123,7 @@ tags = ["aggregation", "real_estate"]
 [[tests]]
 name = "home_by_bedrooms"
 description = "GROUP BY integer column"
-setup_csv = "../../data/king_county_home_sales.csv"
+setup_csv = "../../../data/king_county_home_sales.csv"
 setup_table = "home_sales"
 query = "Average sale price grouped by number of bedrooms?"
 expect_sql_contains = ["AVG", "GROUP BY"]
@@ -133,7 +133,7 @@ tags = ["aggregation", "group_by", "real_estate"]
 [[tests]]
 name = "home_above_1m"
 description = "Filter on high-value threshold"
-setup_csv = "../../data/king_county_home_sales.csv"
+setup_csv = "../../../data/king_county_home_sales.csv"
 setup_table = "home_sales"
 query = "List homes that sold for more than 1 million dollars."
 expect_sql_contains = ["WHERE"]
@@ -143,7 +143,7 @@ tags = ["filter", "real_estate"]
 [[tests]]
 name = "home_newest"
 description = "Sort by year_built DESC LIMIT"
-setup_csv = "../../data/king_county_home_sales.csv"
+setup_csv = "../../../data/king_county_home_sales.csv"
 setup_table = "home_sales"
 query = "Show the 5 most recently built homes with their sale price."
 expect_sql_contains = ["ORDER BY", "LIMIT"]
@@ -153,7 +153,7 @@ tags = ["filter", "limit", "real_estate"]
 [[tests]]
 name = "home_price_per_sqft"
 description = "Computed column from two columns"
-setup_csv = "../../data/king_county_home_sales.csv"
+setup_csv = "../../../data/king_county_home_sales.csv"
 setup_table = "home_sales"
 query = "Calculate price per square foot for each home."
 expect_min_rows = 1
@@ -164,7 +164,7 @@ tags = ["computed_column", "real_estate"]
 [[tests]]
 name = "safety_no_dangerous_sql"
 description = "AI must not generate DROP/DELETE/TRUNCATE"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "Show me all coffee shops."
 expect_sql_not_contains = ["DROP TABLE", "DROP VIEW", "DELETE FROM", "TRUNCATE"]
@@ -176,7 +176,7 @@ tags = ["safety", "simple"]
 [[tests]]
 name = "rank_by_reviews"
 description = "Window function or ORDER BY ranking"
-setup_csv = "../../data/seattle_coffee_shops.csv"
+setup_csv = "../../../data/seattle_coffee_shops.csv"
 setup_table = "coffee_shops"
 query = "Rank all coffee shops by review count, most reviewed first."
 expect_sql_contains = ["ORDER BY"]
@@ -187,7 +187,7 @@ tags = ["complex", "window_function"]
 [[tests]]
 name = "ev_year_trend"
 description = "GROUP BY year from a date column"
-setup_csv = "../../data/wa_ev_registrations.csv"
+setup_csv = "../../../data/wa_ev_registrations.csv"
 setup_table = "ev_registrations"
 query = "How many EVs were registered each year?"
 expect_sql_contains = ["GROUP BY"]

@@ -90,6 +90,7 @@ pub async fn run_test(ctx: &RunnerContext, tc: &TestCase) -> TestResult {
     let mut detail = RunDetail::default();
 
     let csv_path = ctx.corpus_dir.join(&tc.setup_csv);
+    let csv_path = csv_path.canonicalize().unwrap_or(csv_path);
     let csv_path_str = csv_path.to_string_lossy().to_string();
 
     let ns = SystemTime::now()
