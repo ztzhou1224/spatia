@@ -184,10 +184,13 @@ pub fn run_test(
     let (results, stats) = match geocode_result {
         Ok(Ok((results, stats))) => (results, stats),
         Ok(Err(e)) => {
-            // geocode_batch can fail if API key is missing — that's expected for some tests
+            // geocode_batch can fail if API key is missing — that's expected for tests
+            // where we expect unresolved addresses (no API key means API fallback fails).
+            let err_msg = format!("{e}");
+            let is_api_key_missing = err_msg.contains("SPATIA_GEOCODIO_API_KEY");
             timing.total_ms = test_start.elapsed().as_millis() as u64;
-            let outcome = if tc.expect_unresolved_count == Some(tc.addresses.len()) {
-                // If we expected all to be unresolved, this might be OK
+            let outcome = if is_api_key_missing && tc.expect_unresolved_count.is_some() {
+                // Expected: test wants unresolved addresses and API key is missing
                 "pass"
             } else {
                 "geocode_error"

@@ -8,62 +8,8 @@ use tantivy::schema::{
 use tantivy::{doc, Index, IndexWriter, Term};
 use tracing::{debug, info};
 
-use crate::geocode::tokenize_address;
-use crate::EngineResult;
-
-/// Pre-process an address string for Tantivy indexing/querying:
-/// normalize, expand abbreviations, remove noise tokens.
-pub fn preprocess_address(address: &str) -> String {
-    let tokens = tokenize_address(address);
-    let processed: Vec<String> = tokens
-        .iter()
-        .map(|t| expand_abbreviation(t).to_string())
-        .filter(|t| !is_noise_token(t))
-        .collect();
-    processed.join(" ")
-}
-
-/// Expand common street-type, directional, and unit abbreviations.
-fn expand_abbreviation(token: &str) -> &str {
-    match token {
-        "st" => "street",
-        "ave" => "avenue",
-        "blvd" => "boulevard",
-        "dr" => "drive",
-        "ln" => "lane",
-        "rd" => "road",
-        "ct" => "court",
-        "cir" => "circle",
-        "pl" => "place",
-        "ter" => "terrace",
-        "hwy" => "highway",
-        "pkwy" => "parkway",
-        "sq" => "square",
-        "n" => "north",
-        "s" => "south",
-        "e" => "east",
-        "w" => "west",
-        "ne" => "northeast",
-        "nw" => "northwest",
-        "se" => "southeast",
-        "sw" => "southwest",
-        "apt" => "apartment",
-        "ste" => "suite",
-        "fl" => "floor",
-        other => other,
-    }
-}
-
-const US_STATE_ABBREVS: &[&str] = &[
-    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in", "ia",
-    "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj",
-    "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt",
-    "va", "wa", "wv", "wi", "wy", "dc",
-];
-
-fn is_noise_token(token: &str) -> bool {
-    US_STATE_ABBREVS.contains(&token) || matches!(token, "us" | "usa")
-}
+use crate::text::preprocess_address;
+use crate::types::GeoResult;
 
 // ---- Index Schema ----
 
@@ -108,7 +54,7 @@ pub fn build_index(
     conn: &duckdb::Connection,
     lookup_table: &str,
     index_dir: &Path,
-) -> EngineResult<usize> {
+) -> GeoResult<usize> {
     crate::identifiers::validate_table_name(lookup_table)?;
 
     // Clean up any existing index
@@ -176,7 +122,7 @@ pub fn search_addresses(
     index_dir: &Path,
     query: &str,
     top_k: usize,
-) -> EngineResult<Vec<SearchHit>> {
+) -> GeoResult<Vec<SearchHit>> {
     if !index_dir.exists() {
         return Ok(Vec::new());
     }

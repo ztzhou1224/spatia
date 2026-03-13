@@ -4775,14 +4775,42 @@ name = "spatia_engine"
 version = "0.1.0"
 dependencies = [
  "duckdb",
- "mockito",
  "regex",
+ "serde",
+ "serde_json",
+ "spatia_geocode",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "spatia_geocode"
+version = "0.1.0"
+dependencies = [
+ "duckdb",
+ "mockito",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tantivy",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "spatia_geocode_bench"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "duckdb",
+ "serde",
+ "serde_json",
+ "spatia_geocode",
+ "tokio",
+ "toml 0.8.2",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

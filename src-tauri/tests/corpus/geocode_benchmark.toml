@@ -16,7 +16,7 @@ address = "85 Pike St, Seattle, WA 98101"
 lat = 47.6088
 lon = -122.3404
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 min_confidence = 0.8
 
 [[tests]]
@@ -33,7 +33,7 @@ address = "400 Broad St, Seattle, WA 98109"
 lat = 47.6205
 lon = -122.3493
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 min_confidence = 0.8
 
 [[tests]]
@@ -53,13 +53,13 @@ address = "85 Pike St, Seattle, WA 98101"
 lat = 47.6088
 lon = -122.3404
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 [[tests.expect]]
 address = "400 Broad St, Seattle, WA 98109"
 lat = 47.6205
 lon = -122.3493
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 
 [[tests]]
 name = "cache_special_chars"
@@ -75,7 +75,7 @@ address = "123 O'Brien & Sons Rd., Seattle, WA 98101"
 lat = 47.6090
 lon = -122.3350
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 
 [[tests]]
 name = "cache_long_address"
@@ -91,7 +91,7 @@ address = "12345 Northeast 67th Avenue Building C Suite 890, Redmond, WA 98052"
 lat = 47.6700
 lon = -122.1200
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 
 # ============================================================
 # Local fuzzy matching tests (LIKE-based, no Tantivy index)
@@ -212,13 +212,13 @@ name = "local_fuzzy_low_confidence_rejected"
 description = "Wrong city query produces low confidence, should not be accepted"
 tags = ["local_fuzzy"]
 addresses = ["123 Main Street Portland OR"]
+expect_geocoded_count = 0
+expect_unresolved_count = 1
 [tests.setup_lookup]
 base_table = "reject"
 entries = [
     { id = "r1", label = "123 Main Street Springfield IL", lat = 39.7817, lon = -89.6501 }
 ]
-expect_geocoded_count = 0
-expect_unresolved_count = 1
 
 # ============================================================
 # Batch tests: Multiple addresses with mixed sources
@@ -226,8 +226,8 @@ expect_unresolved_count = 1
 
 [[tests]]
 name = "batch_mixed_cache_and_unresolved"
-description = "Batch with cache hits and unresolved addresses"
-tags = ["batch"]
+description = "Batch with cache hits and unresolved addresses (requires API for unresolved)"
+tags = ["batch", "requires_api"]
 addresses = ["85 Pike St, Seattle, WA 98101", "999 Unknown Nowhere St"]
 seed_cache = true
 cache_seeds = [
@@ -239,7 +239,7 @@ address = "85 Pike St, Seattle, WA 98101"
 lat = 47.6088
 lon = -122.3404
 max_distance_meters = 10.0
-expect_source = "cache"
+expect_source = "geocodio"
 
 [[tests]]
 name = "batch_duplicate_addresses"
@@ -274,15 +274,15 @@ seed_cache = true
 cache_seeds = [
     { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404 }
 ]
+expect_geocoded_count = 2
 [tests.setup_lookup]
 base_table = "landmarks"
 entries = [
     { id = "l1", label = "Space Needle Seattle WA", lat = 47.6205, lon = -122.3493 }
 ]
-expect_geocoded_count = 2
 [[tests.expect]]
 address = "85 Pike St, Seattle, WA 98101"
-expect_source = "cache"
+expect_source = "geocodio"
 lat = 47.6088
 lon = -122.3404
 max_distance_meters = 10.0

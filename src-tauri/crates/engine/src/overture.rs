@@ -92,8 +92,8 @@ pub fn overture_extract_to_table(
 
     // Build Tantivy search index for the lookup table
     let lookup = lookup_table_name(&table);
-    let index_dir = crate::search_index::index_dir_for_table(db_path, &lookup);
-    match crate::search_index::build_index(&conn, &lookup, &index_dir) {
+    let index_dir = spatia_geocode::search_index::index_dir_for_table(db_path, &lookup);
+    match spatia_geocode::search_index::build_index(&conn, &lookup, &index_dir) {
         Ok(count) => {
             tracing::info!(
                 doc_count = count,

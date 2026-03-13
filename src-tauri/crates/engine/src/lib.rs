@@ -1,30 +1,25 @@
 mod analysis;
 mod db_manager;
 mod executor;
-mod geocode;
-#[cfg(test)]
-mod geocode_integration_tests;
 mod identifiers;
 mod ingest;
 mod overture;
-pub mod search_index;
 mod schema;
 mod types;
+
+// Re-export geocode crate's public API for backward compatibility
+pub use spatia_geocode::{
+    cache_lookup, cache_store, ensure_cache_table,
+    geocode_addresses, geocode_batch, geocode_via_geocodio,
+    GeocodeBatchResult, GeocodeResult, GeocodeStats,
+};
+pub use spatia_geocode::search_index;
 
 pub use analysis::execute_analysis_sql_to_geojson;
 pub use analysis::AnalysisExecutionResult;
 pub use analysis::TabularResult;
 pub use db_manager::DbManager;
 pub use executor::execute_command;
-pub use geocode::cache_lookup;
-pub use geocode::cache_store;
-pub use geocode::ensure_cache_table;
-pub use geocode::geocode_addresses;
-pub use geocode::geocode_batch;
-pub use geocode::geocode_via_geocodio;
-pub use geocode::GeocodeBatchResult;
-pub use geocode::GeocodeResult;
-pub use geocode::GeocodeStats;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
 pub use overture::overture_extract_to_table;
