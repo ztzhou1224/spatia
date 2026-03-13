@@ -1,0 +1,21 @@
+id,name,address,city,state,zip,lat,lon
+1,Pike Place Market,85 Pike St,Seattle,WA,98101,47.6088,-122.3404
+2,Space Needle,400 Broad St,Seattle,WA,98109,47.6205,-122.3493
+3,Seattle Central Library,1000 4th Ave,Seattle,WA,98104,47.6067,-122.3326
+4,Gas Works Park,2101 N Northlake Way,Seattle,WA,98103,47.6456,-122.3344
+5,Microsoft Campus,1 Microsoft Way,Redmond,WA,98052,47.6396,-122.1283
+6,University of Washington,4001 University Way NE,Seattle,WA,98105,47.6553,-122.3035
+7,Kerry Park,211 W Highland Dr,Seattle,WA,98119,47.6295,-122.3599
+8,Pioneer Square,614 1st Ave,Seattle,WA,98104,47.6021,-122.3343
+9,Fremont Troll,3505 Troll Ave N,Seattle,WA,98103,47.6510,-122.3473
+10,Ballard Locks,3015 NW 54th St,Seattle,WA,98107,47.6656,-122.3975
+11,Capitol Hill,1501 Broadway,Seattle,WA,98122,47.6147,-122.3207
+12,Green Lake Park,7201 E Green Lake Dr N,Seattle,WA,98115,47.6803,-122.3286
+13,Museum of Flight,9404 E Marginal Way S,Tukwila,WA,98108,47.5180,-122.2964
+14,Woodland Park Zoo,5500 Phinney Ave N,Seattle,WA,98103,47.6685,-122.3530
+15,Alki Beach,1702 Alki Ave SW,Seattle,WA,98116,47.5763,-122.4094
+16,Columbia Center,701 5th Ave,Seattle,WA,98104,47.6044,-122.3310
+17,Pike St Market Abbrev,85 Pike St,Seattle,WA,98101,47.6088,-122.3404
+18,Space Needle Dr Abbrev,400 Broad Dr,Seattle,WA,98109,47.6205,-122.3493
+19,N Main Test,100 N Main Ave,Denver,CO,80202,39.7392,-104.9903
+20,Elm Blvd Test,789 Elm Blvd,Seattle,WA,98101,47.6062,-122.3321

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/engine", "crates/cli", "crates/ai", "crates/bench"]
+members = [".", "crates/engine", "crates/cli", "crates/ai", "crates/bench", "crates/geocode", "crates/geocode_bench"]
 
 [package]
 name = "spatia"

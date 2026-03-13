@@ -1,0 +1,390 @@
+# ============================================================
+# Cache tests: Pre-seeded cache hits, validate exact coordinates
+# ============================================================
+
+[[tests]]
+name = "cache_pike_place"
+description = "Cache hit for Pike Place Market"
+tags = ["cache"]
+addresses = ["85 Pike St, Seattle, WA 98101"]
+seed_cache = true
+cache_seeds = [
+    { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404, source = "geocodio" }
+]
+[[tests.expect]]
+address = "85 Pike St, Seattle, WA 98101"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 10.0
+expect_source = "cache"
+min_confidence = 0.8
+
+[[tests]]
+name = "cache_space_needle"
+description = "Cache hit for Space Needle"
+tags = ["cache"]
+addresses = ["400 Broad St, Seattle, WA 98109"]
+seed_cache = true
+cache_seeds = [
+    { address = "400 Broad St, Seattle, WA 98109", lat = 47.6205, lon = -122.3493, source = "geocodio" }
+]
+[[tests.expect]]
+address = "400 Broad St, Seattle, WA 98109"
+lat = 47.6205
+lon = -122.3493
+max_distance_meters = 10.0
+expect_source = "cache"
+min_confidence = 0.8
+
+[[tests]]
+name = "cache_multiple_hits"
+description = "Multiple cache hits in one batch"
+tags = ["cache", "batch"]
+addresses = ["85 Pike St, Seattle, WA 98101", "400 Broad St, Seattle, WA 98109"]
+seed_cache = true
+cache_seeds = [
+    { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404 },
+    { address = "400 Broad St, Seattle, WA 98109", lat = 47.6205, lon = -122.3493 }
+]
+expect_geocoded_count = 2
+expect_unresolved_count = 0
+[[tests.expect]]
+address = "85 Pike St, Seattle, WA 98101"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 10.0
+expect_source = "cache"
+[[tests.expect]]
+address = "400 Broad St, Seattle, WA 98109"
+lat = 47.6205
+lon = -122.3493
+max_distance_meters = 10.0
+expect_source = "cache"
+
+[[tests]]
+name = "cache_special_chars"
+description = "Cache hit with special characters in address"
+tags = ["cache", "edge_case"]
+addresses = ["123 O'Brien & Sons Rd., Seattle, WA 98101"]
+seed_cache = true
+cache_seeds = [
+    { address = "123 O'Brien & Sons Rd., Seattle, WA 98101", lat = 47.6090, lon = -122.3350 }
+]
+[[tests.expect]]
+address = "123 O'Brien & Sons Rd., Seattle, WA 98101"
+lat = 47.6090
+lon = -122.3350
+max_distance_meters = 10.0
+expect_source = "cache"
+
+[[tests]]
+name = "cache_long_address"
+description = "Cache hit with very long address"
+tags = ["cache", "edge_case"]
+addresses = ["12345 Northeast 67th Avenue Building C Suite 890, Redmond, WA 98052"]
+seed_cache = true
+cache_seeds = [
+    { address = "12345 Northeast 67th Avenue Building C Suite 890, Redmond, WA 98052", lat = 47.6700, lon = -122.1200 }
+]
+[[tests.expect]]
+address = "12345 Northeast 67th Avenue Building C Suite 890, Redmond, WA 98052"
+lat = 47.6700
+lon = -122.1200
+max_distance_meters = 10.0
+expect_source = "cache"
+
+# ============================================================
+# Local fuzzy matching tests (LIKE-based, no Tantivy index)
+# ============================================================
+
+[[tests]]
+name = "local_fuzzy_exact_match"
+description = "Exact label match via local fuzzy lookup"
+tags = ["local_fuzzy"]
+addresses = ["123 Main Street Springfield IL"]
+[tests.setup_lookup]
+base_table = "places"
+entries = [
+    { id = "p1", label = "123 Main Street Springfield IL", lat = 39.7817, lon = -89.6501 }
+]
+[[tests.expect]]
+address = "123 Main Street Springfield IL"
+lat = 39.7817
+lon = -89.6501
+max_distance_meters = 50.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.75
+
+[[tests]]
+name = "local_fuzzy_abbreviation"
+description = "Abbreviation expansion: St->Street, Ave->Avenue"
+tags = ["local_fuzzy"]
+addresses = ["456 Oak Ave Chicago"]
+[tests.setup_lookup]
+base_table = "addr"
+entries = [
+    { id = "a1", label = "456 Oak Avenue Chicago 60601", lat = 41.8781, lon = -87.6298 }
+]
+[[tests.expect]]
+address = "456 Oak Ave Chicago"
+lat = 41.8781
+lon = -87.6298
+max_distance_meters = 100.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.7
+
+[[tests]]
+name = "local_fuzzy_directional_abbrev"
+description = "Directional abbreviation: N->North"
+tags = ["local_fuzzy"]
+addresses = ["100 N Main Street Denver"]
+[tests.setup_lookup]
+base_table = "streets"
+entries = [
+    { id = "s1", label = "100 North Main Street Denver 80202", lat = 39.7392, lon = -104.9903 }
+]
+[[tests.expect]]
+address = "100 N Main Street Denver"
+lat = 39.7392
+lon = -104.9903
+max_distance_meters = 100.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.7
+
+[[tests]]
+name = "local_fuzzy_blvd_expansion"
+description = "Boulevard abbreviation expansion"
+tags = ["local_fuzzy"]
+addresses = ["789 Elm Blvd Seattle"]
+[tests.setup_lookup]
+base_table = "roads"
+entries = [
+    { id = "r1", label = "789 Elm Boulevard Seattle 98101", lat = 47.6062, lon = -122.3321 }
+]
+[[tests.expect]]
+address = "789 Elm Blvd Seattle"
+lat = 47.6062
+lon = -122.3321
+max_distance_meters = 100.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.7
+
+[[tests]]
+name = "local_fuzzy_with_state_noise"
+description = "State abbreviation correctly treated as noise in scoring"
+tags = ["local_fuzzy"]
+addresses = ["85 Pike Street Seattle WA 98101"]
+[tests.setup_lookup]
+base_table = "locations"
+entries = [
+    { id = "l1", label = "85 Pike Street Seattle 98101 US", lat = 47.6088, lon = -122.3404 }
+]
+[[tests.expect]]
+address = "85 Pike Street Seattle WA 98101"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 100.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.85
+
+[[tests]]
+name = "local_fuzzy_multiple_candidates"
+description = "Best match selected from multiple candidates"
+tags = ["local_fuzzy"]
+addresses = ["123 Main Street Springfield IL 62704"]
+[tests.setup_lookup]
+base_table = "multi"
+entries = [
+    { id = "m1", label = "123 Main Street Springfield IL 62704", lat = 39.7817, lon = -89.6501 },
+    { id = "m2", label = "123 Main Street Chicago IL 60602", lat = 41.8781, lon = -87.6298 },
+    { id = "m3", label = "456 Oak Avenue Springfield IL 62701", lat = 39.7900, lon = -89.6400 }
+]
+[[tests.expect]]
+address = "123 Main Street Springfield IL 62704"
+lat = 39.7817
+lon = -89.6501
+max_distance_meters = 50.0
+expect_source = "overture_fuzzy"
+min_confidence = 0.85
+
+[[tests]]
+name = "local_fuzzy_low_confidence_rejected"
+description = "Wrong city query produces low confidence, should not be accepted"
+tags = ["local_fuzzy"]
+addresses = ["123 Main Street Portland OR"]
+[tests.setup_lookup]
+base_table = "reject"
+entries = [
+    { id = "r1", label = "123 Main Street Springfield IL", lat = 39.7817, lon = -89.6501 }
+]
+expect_geocoded_count = 0
+expect_unresolved_count = 1
+
+# ============================================================
+# Batch tests: Multiple addresses with mixed sources
+# ============================================================
+
+[[tests]]
+name = "batch_mixed_cache_and_unresolved"
+description = "Batch with cache hits and unresolved addresses"
+tags = ["batch"]
+addresses = ["85 Pike St, Seattle, WA 98101", "999 Unknown Nowhere St"]
+seed_cache = true
+cache_seeds = [
+    { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404 }
+]
+expect_geocoded_count = 1
+[[tests.expect]]
+address = "85 Pike St, Seattle, WA 98101"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 10.0
+expect_source = "cache"
+
+[[tests]]
+name = "batch_duplicate_addresses"
+description = "Duplicate addresses in input both get results"
+tags = ["batch"]
+addresses = ["85 Pike St, Seattle, WA 98101", "85 Pike St, Seattle, WA 98101"]
+seed_cache = true
+cache_seeds = [
+    { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404 }
+]
+expect_geocoded_count = 2
+
+[[tests]]
+name = "batch_order_preservation"
+description = "Results preserve input order"
+tags = ["batch"]
+addresses = ["addr gamma", "addr alpha", "addr beta"]
+seed_cache = true
+cache_seeds = [
+    { address = "addr alpha", lat = 10.0, lon = 20.0 },
+    { address = "addr beta", lat = 30.0, lon = 40.0 },
+    { address = "addr gamma", lat = 50.0, lon = 60.0 }
+]
+expect_geocoded_count = 3
+
+[[tests]]
+name = "batch_cache_and_fuzzy_mixed"
+description = "Batch combining cache hit and local fuzzy match"
+tags = ["batch", "local_fuzzy", "cache"]
+addresses = ["85 Pike St, Seattle, WA 98101", "Space Needle Seattle WA"]
+seed_cache = true
+cache_seeds = [
+    { address = "85 Pike St, Seattle, WA 98101", lat = 47.6088, lon = -122.3404 }
+]
+[tests.setup_lookup]
+base_table = "landmarks"
+entries = [
+    { id = "l1", label = "Space Needle Seattle WA", lat = 47.6205, lon = -122.3493 }
+]
+expect_geocoded_count = 2
+[[tests.expect]]
+address = "85 Pike St, Seattle, WA 98101"
+expect_source = "cache"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 10.0
+[[tests.expect]]
+address = "Space Needle Seattle WA"
+expect_source = "overture_fuzzy"
+lat = 47.6205
+lon = -122.3493
+max_distance_meters = 100.0
+
+# ============================================================
+# Edge case tests
+# ============================================================
+
+[[tests]]
+name = "edge_empty_batch"
+description = "Empty address list returns empty results"
+tags = ["edge_case"]
+addresses = []
+expect_geocoded_count = 0
+expect_unresolved_count = 0
+
+[[tests]]
+name = "edge_cache_confidence"
+description = "Cached geocodio results get default confidence 0.85"
+tags = ["cache", "edge_case"]
+addresses = ["cached addr"]
+seed_cache = true
+cache_seeds = [
+    { address = "cached addr", lat = 1.5, lon = 2.5, source = "geocodio" }
+]
+[[tests.expect]]
+address = "cached addr"
+min_confidence = 0.8
+
+[[tests]]
+name = "edge_cache_upsert"
+description = "Cache upserts overwrite previous values"
+tags = ["cache", "edge_case"]
+addresses = ["test addr"]
+seed_cache = true
+cache_seeds = [
+    { address = "test addr", lat = 11.0, lon = 21.0, source = "geocodio" }
+]
+[[tests.expect]]
+address = "test addr"
+lat = 11.0
+lon = 21.0
+max_distance_meters = 10.0
+
+# ============================================================
+# API tests (requires Geocodio key, skippable via --skip-api)
+# ============================================================
+
+[[tests]]
+name = "api_seattle_landmark"
+description = "Geocodio API resolves Seattle landmark"
+tags = ["requires_api"]
+addresses = ["400 Broad St, Seattle, WA 98109"]
+[[tests.expect]]
+address = "400 Broad St, Seattle, WA 98109"
+lat = 47.6205
+lon = -122.3493
+max_distance_meters = 500.0
+expect_source = "geocodio"
+min_confidence = 0.5
+
+[[tests]]
+name = "api_redmond_address"
+description = "Geocodio API resolves Redmond address"
+tags = ["requires_api"]
+addresses = ["1 Microsoft Way, Redmond, WA 98052"]
+[[tests.expect]]
+address = "1 Microsoft Way, Redmond, WA 98052"
+lat = 47.6396
+lon = -122.1283
+max_distance_meters = 500.0
+expect_source = "geocodio"
+min_confidence = 0.5
+
+[[tests]]
+name = "api_batch_multiple"
+description = "Geocodio API batch with multiple addresses"
+tags = ["requires_api", "batch"]
+addresses = [
+    "85 Pike St, Seattle, WA 98101",
+    "400 Broad St, Seattle, WA 98109",
+    "1000 4th Ave, Seattle, WA 98104"
+]
+expect_geocoded_count = 3
+[[tests.expect]]
+address = "85 Pike St, Seattle, WA 98101"
+lat = 47.6088
+lon = -122.3404
+max_distance_meters = 500.0
+[[tests.expect]]
+address = "400 Broad St, Seattle, WA 98109"
+lat = 47.6205
+lon = -122.3493
+max_distance_meters = 500.0
+[[tests.expect]]
+address = "1000 4th Ave, Seattle, WA 98104"
+lat = 47.6067
+lon = -122.3326
+max_distance_meters = 500.0
