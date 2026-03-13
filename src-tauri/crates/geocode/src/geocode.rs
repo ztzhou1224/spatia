@@ -214,7 +214,7 @@ fn tantivy_fuzzy_geocode(
     Ok(results)
 }
 
-pub(crate) fn local_fuzzy_geocode(
+pub fn local_fuzzy_geocode(
     conn: &Connection,
     addresses: &[String],
     db_path: Option<&str>,

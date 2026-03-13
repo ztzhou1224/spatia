@@ -1,4 +1,5 @@
 mod corpus;
+pub mod fuzzy_bench;
 mod report;
 mod runner;
 
@@ -38,6 +39,18 @@ struct Cli {
     /// Skip tests tagged with 'requires_api'
     #[arg(long, default_value_t = false)]
     skip_api: bool,
+
+    /// Run the fuzzy search accuracy benchmark instead of the TOML corpus tests
+    #[arg(long, default_value_t = false)]
+    fuzzy: bool,
+
+    /// Path to ground truth CSV for fuzzy bench (default: data/fuzzy_bench_addresses.csv)
+    #[arg(long)]
+    fuzzy_ground_truth: Option<String>,
+
+    /// Path to variations CSV for fuzzy bench (default: data/fuzzy_bench_variations.csv)
+    #[arg(long)]
+    fuzzy_variations: Option<String>,
 }
 
 fn main() {
@@ -49,6 +62,12 @@ fn main() {
         .init();
 
     let cli = Cli::parse();
+
+    // ── Fuzzy accuracy benchmark mode ───────────────────────────────────────
+    if cli.fuzzy {
+        run_fuzzy_mode(&cli);
+        return;
+    }
 
     let corpus_path = PathBuf::from(&cli.corpus);
     let corpus_str = std::fs::read_to_string(&corpus_path).unwrap_or_else(|e| {
@@ -165,4 +184,68 @@ fn main() {
     if report.summary.failed > 0 {
         std::process::exit(1);
     }
+}
+
+fn run_fuzzy_mode(cli: &Cli) {
+    let data_dir = default_data_dir();
+
+    let gt_path = cli
+        .fuzzy_ground_truth
+        .clone()
+        .unwrap_or_else(|| data_dir.join("fuzzy_bench_addresses.csv").to_string_lossy().into());
+
+    let var_path = cli
+        .fuzzy_variations
+        .clone()
+        .unwrap_or_else(|| data_dir.join("fuzzy_bench_variations.csv").to_string_lossy().into());
+
+    if !Path::new(&gt_path).exists() {
+        eprintln!("ERROR: ground truth CSV not found at '{}'", gt_path);
+        eprintln!("Run `cargo run -p spatia_geocode_bench --bin seed_fuzzy_bench` first.");
+        std::process::exit(1);
+    }
+    if !Path::new(&var_path).exists() {
+        eprintln!("ERROR: variations CSV not found at '{}'", var_path);
+        eprintln!("Run `cargo run -p spatia_geocode_bench --bin gen_fuzzy_variations` first.");
+        std::process::exit(1);
+    }
+
+    println!("spatia_geocode_bench: fuzzy accuracy mode");
+    println!("  Ground truth : {}", gt_path);
+    println!("  Variations   : {}", var_path);
+
+    let config = fuzzy_bench::FuzzyBenchConfig {
+        ground_truth_csv: gt_path,
+        variations_csv: var_path,
+    };
+
+    match fuzzy_bench::run_fuzzy_bench(&config) {
+        Ok(report) => {
+            report.print_summary();
+
+            let output_path = cli.output.clone().unwrap_or_else(|| {
+                let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+                format!("spatia_fuzzy_bench_report_{ts}.json")
+            });
+
+            match report.write_json(&output_path) {
+                Ok(()) => info!("JSON report written to {}", output_path),
+                Err(e) => tracing::warn!("failed to write JSON report: {}", e),
+            }
+        }
+        Err(e) => {
+            eprintln!("ERROR: fuzzy benchmark failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn default_data_dir() -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .map(|p| p.join("data"))
+        .unwrap_or_else(|| PathBuf::from("data"))
 }
