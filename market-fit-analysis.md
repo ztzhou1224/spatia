@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Spatia occupies a genuinely underserved position in the GIS software landscape: a local-first, AI-powered desktop tool that makes spatial data analysis accessible to analysts who know their data but do not know GIS. Its core strengths — local geocoding, natural language SQL generation against real spatial data, and offline operation — are meaningfully differentiated from every competitor in the target segment. However, the absence of data export, limited spatial analysis operators, and the CSV-only import constraint represent critical blockers that will prevent adoption even among users who are otherwise a perfect fit. This document maps those gaps, ranks them by impact, and proposes a phased roadmap to market readiness.
+Spatia occupies a genuinely underserved position in the GIS software landscape: a local-first, AI-powered desktop tool that makes spatial data analysis accessible to analysts who know their data but do not know GIS. Its core strengths — local geocoding, natural language SQL generation against real spatial data, and offline operation — are meaningfully differentiated from ArcGIS Pro (too complex/expensive), Tableau (too limited on spatial), and Carto (enterprise-only, cloud-dependent). However, Carto's 2025 launch of AI Agents for natural language spatial queries narrows what was previously a unique Spatia advantage, adding urgency to reach market. The absence of data export, limited spatial analysis operators, and the CSV-only import constraint represent critical blockers that will prevent adoption even among users who are otherwise a perfect fit. This document maps those gaps against all three major competitors, ranks them by impact, and proposes a phased roadmap to market readiness.
 
 ---
 
@@ -26,7 +26,7 @@ The GIS and spatial analytics tool market can be mapped along two axes:
 | Moderate depth, low curve | Tableau (map view), Power BI (map visual) |
 | Emerging: moderate depth, low curve + AI | Felt, Carto Builder, Kepler.gl, **Spatia** |
 
-Spatia's target quadrant is the lower-right: moderate-to-high spatial depth, genuinely low learning curve, AI-accelerated. No incumbent owns this space cleanly. Felt comes closest on ease of use but is cloud-only with weak analysis depth. Kepler.gl has depth but no AI and no geocoding. Carto has both but targets enterprise.
+Spatia's target quadrant is the lower-right: moderate-to-high spatial depth, genuinely low learning curve, AI-accelerated. No incumbent owns this space cleanly. Felt comes closest on ease of use but is cloud-only with weak analysis depth. Kepler.gl has depth but no AI and no geocoding.
 
 ### The Specific Gap Spatia Fills
 
@@ -34,23 +34,25 @@ Spatia's target quadrant is the lower-right: moderate-to-high spatial depth, gen
 
 **The Tableau problem:** Tableau's spatial support is genuinely limited. It can plot lat/lon points and join to pre-built geography files (states, zip codes), but it cannot geocode raw addresses locally, cannot execute spatial SQL, cannot buffer or intersect features, and produces no spatial outputs that other GIS tools can consume. A market analyst who builds Tableau dashboards hits a hard wall the moment spatial queries become non-trivial.
 
-**The gap Spatia fills:** An analyst with a CSV of addresses, a spatial question, and no GIS background should be able to get a map answer in under 10 minutes without cloud dependencies, subscription fees, or a GIS degree. Today, no tool makes this true. Spatia is explicitly designed to make it true.
+**The Carto problem:** Carto is Spatia's closest direct competitor and the most significant competitive threat. In 2025, Carto launched "Agentic GIS" — AI Agents that enable natural language spatial queries within map dashboards — directly overlapping Spatia's core UVP. Carto also offers low-code Workflows (100+ drag-and-drop spatial analysis tools), Builder (rich visualization powered by deck.gl), a Data Observatory with 12,000+ curated datasets, and native connections to BigQuery, Snowflake, and Redshift. However, Carto is enterprise-first: pricing starts at ~$199+/month (not publicly listed, requires sales contact), targets large teams (3–10+ editors, 15–50+ viewers per plan), requires cloud data warehouse infrastructure, and offers no offline or local-first capability. A solo analyst or small team with a CSV of addresses and no cloud data warehouse cannot use Carto cost-effectively.
+
+**The gap Spatia fills:** An analyst with a CSV of addresses, a spatial question, and no GIS background should be able to get a map answer in under 10 minutes without cloud dependencies, subscription fees, or a GIS degree. Today, no tool makes this true. ArcGIS Pro demands GIS expertise. Tableau lacks spatial depth. Carto requires enterprise budgets and cloud infrastructure. Spatia is explicitly designed to make it true for individual analysts and small teams.
 
 ### Competitor Comparison Matrix
 
 | Dimension | Spatia (current) | ArcGIS Pro | Tableau | QGIS | Kepler.gl | Felt | Carto |
 |---|---|---|---|---|---|---|---|
-| **Primary paradigm** | AI chat + map | Toolbox + GUI | BI + map | Desktop GIS | Visualization | Collaborative map | Cloud analytics |
-| **Target user** | Data analysts | GIS professionals | BI analysts | GIS/technical | Data engineers | Teams | Enterprise |
-| **Local/offline** | Yes (core) | Yes | No | Yes | No (browser) | No | No |
-| **Geocoding** | Local + API fallback | ESRI geocoder (paid) | None native | Plugin | None | Limited | API-based |
-| **AI analysis** | Natural language SQL | Limited/Copilot add-on | Ask Data (basic) | None | None | None | GPT-based (enterprise) |
-| **Spatial SQL** | Via AI (DuckDB) | Python/Model Builder | None | Processing | None | None | PostGIS (technical) |
-| **Data import** | CSV only | CSV, Shapefile, GDB, GeoJSON, KML, Excel, PostGIS... | Excel, CSV, DB connections | 50+ formats | GeoJSON, CSV | GeoJSON, CSV | CSV, PostGIS, BigQuery |
-| **Data export** | None currently | All formats | Excel, PDF, Tableau format | All formats | GeoJSON | GeoJSON, CSV | CSV, GeoJSON |
-| **Pricing** | TBD (free/open?) | $1,500–$3,500+/year | $70–$840/user/year | Free | Free | Free tier + paid | $199+/month |
-| **Learning curve** | Low (by design) | Very high | Moderate | High | Moderate | Low | Moderate-high |
-| **Deployment** | Desktop (Tauri) | Desktop (Windows) | Cloud + Desktop | Desktop | Browser | Browser | Cloud |
+| **Primary paradigm** | AI chat + map | Toolbox + GUI | BI + map | Desktop GIS | Visualization | Collaborative map | Agentic GIS + cloud analytics |
+| **Target user** | Data analysts | GIS professionals | BI analysts | GIS/technical | Data engineers | Teams | Enterprise spatial teams |
+| **Local/offline** | Yes (core) | Yes | No | Yes | No (browser) | No | No (cloud-native) |
+| **Geocoding** | Local + API fallback | ESRI geocoder (paid) | None native | Plugin | None | Limited | API-based (Data Observatory) |
+| **AI analysis** | Natural language SQL | Limited/Copilot add-on | Ask Data (basic) | None | None | None | AI Agents (NL in dashboards) |
+| **Spatial SQL** | Via AI (DuckDB) | Python/Model Builder | None | Processing | None | None | PostGIS/BigQuery (via Workflows) |
+| **Data import** | CSV only | CSV, Shapefile, GDB, GeoJSON, KML, Excel, PostGIS... | Excel, CSV, DB connections | 50+ formats | GeoJSON, CSV | GeoJSON, CSV | CSV, Shapefile, GeoJSON, BigQuery, Snowflake, Redshift |
+| **Data export** | None currently | All formats | Excel, PDF, Tableau format | All formats | GeoJSON | GeoJSON, CSV | CSV, GeoJSON, API |
+| **Pricing** | TBD (free/open?) | $1,500–$3,500+/year | $70–$840/user/year | Free | Free | Free tier + paid | ~$199+/month (enterprise, not public) |
+| **Learning curve** | Low (by design) | Very high | Moderate | High | Moderate | Low | Moderate (Builder low, Workflows moderate) |
+| **Deployment** | Desktop (Tauri) | Desktop (Windows) | Cloud + Desktop | Desktop | Browser | Browser | Cloud (SaaS or self-hosted enterprise) |
 
 ---
 
@@ -58,18 +60,19 @@ Spatia's target quadrant is the lower-right: moderate-to-high spatial depth, gen
 
 ### Data Import / Export
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| CSV import | Yes | Yes | Yes | — (Spatia competitive) |
-| Shapefile import | No | Yes | No | Important Gap |
-| GeoJSON import | No | Yes | Partial | Important Gap |
-| KML/KMZ import | No | Yes | No | Nice-to-Have |
-| Excel import | No | Yes | Yes | Important Gap |
-| PostGIS connection | No | Yes | Yes | Nice-to-Have |
-| Data export (CSV) | No | Yes | Yes | **Critical Gap** |
-| Data export (Shapefile/GeoJSON) | No | Yes | No | **Critical Gap** |
-| PDF / image export | No | Yes | Yes | Important Gap |
-| Chart image export | No | Yes | Yes | Important Gap |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| CSV import | Yes | Yes | Yes | Yes | — (Spatia competitive) |
+| Shapefile import | No | Yes | No | Yes | Important Gap |
+| GeoJSON import | No | Yes | Partial | Yes | Important Gap |
+| KML/KMZ import | No | Yes | No | No | Nice-to-Have |
+| Excel import | No | Yes | Yes | No | Important Gap |
+| PostGIS connection | No | Yes | Yes | Yes (native) | Nice-to-Have |
+| Cloud DW connection (BigQuery, Snowflake) | No | No | Yes | Yes (core architecture) | Important Gap (vs Carto) |
+| Data export (CSV) | No | Yes | Yes | Yes | **Critical Gap** |
+| Data export (Shapefile/GeoJSON) | No | Yes | No | Yes (GeoJSON) | **Critical Gap** |
+| PDF / image export | No | Yes | Yes | Yes (PNG) | Important Gap |
+| Chart image export | No | Yes | Yes | Yes | Important Gap |
 
 **Summary:** The complete absence of any export path is the single most critical product gap. Users who derive a result cannot take it anywhere.
 
@@ -77,158 +80,169 @@ Spatia's target quadrant is the lower-right: moderate-to-high spatial depth, gen
 
 ### Data Management and Preparation
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| AI data cleaning (multi-round) | Yes | No | No | **Spatia Advantage** |
-| Data type detection | Yes (auto-schema) | Yes | Yes | Competitive |
-| Table preview (50 rows) | Yes | Yes | Yes | Competitive |
-| Column filtering / sorting in UI | No | Yes | Yes | Important Gap |
-| Search / filter rows | No | Yes | Yes | Important Gap |
-| Data profiling / quality metrics | No | Yes | Tableau Prep | Important Gap |
-| Undo / redo | No | Yes | Yes | Nice-to-Have |
-| Calculated fields | Via AI SQL | Yes | Yes | Partial (AI covers this) |
-| Schema browsing | Via table preview | Full catalog | Full catalog | Important Gap |
-| Saved queries / bookmarks | No | Yes | Yes | Nice-to-Have |
-| Multi-table joins (user-driven) | Via AI SQL | Yes | Yes | Partial (AI covers this) |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| AI data cleaning (multi-round) | Yes | No | No | No | **Spatia Advantage** |
+| Data type detection | Yes (auto-schema) | Yes | Yes | Yes | Competitive |
+| Table preview (50 rows) | Yes | Yes | Yes | Yes (Builder) | Competitive |
+| Column filtering / sorting in UI | No | Yes | Yes | Yes | Important Gap |
+| Search / filter rows | No | Yes | Yes | Yes | Important Gap |
+| Data profiling / quality metrics | No | Yes | Tableau Prep | Yes (Data Observatory metadata) | Important Gap |
+| Undo / redo | No | Yes | Yes | No | Nice-to-Have |
+| Calculated fields | Via AI SQL | Yes | Yes | Yes (Workflows) | Partial (AI covers this) |
+| Schema browsing | Via table preview | Full catalog | Full catalog | Yes (full catalog) | Important Gap |
+| Saved queries / bookmarks | No | Yes | Yes | Yes (Workflows) | Nice-to-Have |
+| Multi-table joins (user-driven) | Via AI SQL | Yes | Yes | Yes (Workflows drag-and-drop) | Partial (AI covers this) |
+| Low-code data pipeline / ETL | No | ModelBuilder | Tableau Prep | Yes (Workflows — 100+ tools) | Important Gap (vs Carto) |
 
 ---
 
 ### Geocoding and Location Services
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Address geocoding (local) | Yes (Overture) | ESRI locators | No | **Spatia Advantage** |
-| Address geocoding (API fallback) | Yes (Geocodio) | Yes (ESRI) | No | **Spatia Advantage** |
-| Geocoding confidence / source metadata | Yes | Yes | N/A | **Spatia Advantage** |
-| Persistent geocode cache | Yes (DuckDB) | No | N/A | **Spatia Advantage** |
-| Reverse geocoding | No | Yes | No | Nice-to-Have |
-| POI search (Overture) | Yes | Yes | No | **Spatia Advantage** |
-| IP / device location | No | No | No | Not applicable |
-| Batch geocoding (CSV column) | Yes (auto-pipeline) | Yes | No | **Spatia Advantage** |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Address geocoding (local) | Yes (Overture) | ESRI locators | No | No (cloud API only) | **Spatia Advantage** |
+| Address geocoding (API fallback) | Yes (Geocodio) | Yes (ESRI) | No | Yes (Data Observatory) | **Spatia Advantage** |
+| Geocoding confidence / source metadata | Yes | Yes | N/A | Partial | **Spatia Advantage** |
+| Persistent geocode cache | Yes (DuckDB) | No | N/A | No (cloud-based) | **Spatia Advantage** |
+| Reverse geocoding | No | Yes | No | Yes | Nice-to-Have |
+| POI search (Overture) | Yes | Yes | No | Yes (Data Observatory — 12K+ datasets) | Competitive (Carto has broader data) |
+| IP / device location | No | No | No | Yes | Not applicable |
+| Batch geocoding (CSV column) | Yes (auto-pipeline) | Yes | No | Yes (Workflows) | **Spatia Advantage** (offline) |
 
-**Summary:** Geocoding is Spatia's strongest differentiator vs. both ArcGIS Pro (no offline equivalent without expensive locators) and Tableau (no native geocoding at all beyond country/state/zip matching).
+**Summary:** Geocoding is Spatia's strongest differentiator vs. ArcGIS Pro (no offline equivalent without expensive locators), Tableau (no native geocoding), and Carto (requires cloud infrastructure and enterprise pricing for equivalent capability). Spatia's local-first, offline geocoding with persistent caching is unique across all competitors. However, Carto's Data Observatory offers broader enrichment data (demographics, POIs, boundaries) that Spatia cannot match.
 
 ---
 
 ### Spatial Analysis and Operations
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Natural language spatial SQL | Yes (AI) | No | No | **Spatia Advantage** |
-| Buffer / proximity | Via AI SQL (DuckDB spatial) | Yes (toolbox) | No | Partial (AI-mediated) |
-| Intersect / union / difference | Via AI SQL | Yes (toolbox) | No | Partial (AI-mediated) |
-| Point-in-polygon | Via AI SQL | Yes | No | Partial (AI-mediated) |
-| Spatial joins | Via AI SQL | Yes | No | Partial (AI-mediated) |
-| Nearest neighbor / network analysis | Via AI SQL (limited) | Yes | No | Important Gap |
-| Raster analysis | No | Yes | No | Nice-to-Have (out of scope) |
-| Temporal / time-series analysis | Via AI SQL | Yes | Yes | Important Gap |
-| Manual drawing / measurement tools | No | Yes | No | Important Gap |
-| Spatial statistics | Via AI SQL | Yes | No | Partial |
-| Routing / network | No | Yes (Network Analyst) | No | Nice-to-Have |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Natural language spatial SQL | Yes (AI) | No | No | Yes (AI Agents, 2025) | Competitive (Carto now overlaps) |
+| Buffer / proximity | Via AI SQL (DuckDB spatial) | Yes (toolbox) | No | Yes (Workflows) | Partial (AI-mediated) |
+| Intersect / union / difference | Via AI SQL | Yes (toolbox) | No | Yes (Workflows) | Partial (AI-mediated) |
+| Point-in-polygon | Via AI SQL | Yes | No | Yes (Workflows) | Partial (AI-mediated) |
+| Spatial joins | Via AI SQL | Yes | No | Yes (Workflows) | Partial (AI-mediated) |
+| Nearest neighbor / network analysis | Via AI SQL (limited) | Yes | No | Yes (Workflows + isochrones) | Important Gap |
+| Raster analysis | No | Yes | No | No | Nice-to-Have (out of scope) |
+| Temporal / time-series analysis | Via AI SQL | Yes | Yes | Yes (Workflows) | Important Gap |
+| Manual drawing / measurement tools | No | Yes | No | Yes (Builder) | Important Gap |
+| Spatial statistics | Via AI SQL | Yes | No | Yes (Workflows) | Partial |
+| Routing / network / isochrones | No | Yes (Network Analyst) | No | Yes (via LDS/APIs) | Important Gap (vs Carto) |
+| Automated / scheduled analysis | No | ModelBuilder | No | Yes (Workflows — trigger via API, schedule) | Important Gap (vs Carto) |
 
-**Note:** Spatia's AI SQL approach partially covers spatial analysis operations — DuckDB spatial extension supports most ST_ functions — but the coverage is entirely dependent on Gemini generating correct SQL. There is no direct user-driven geometry manipulation.
+**Note:** Spatia's AI SQL approach partially covers spatial analysis operations — DuckDB spatial extension supports most ST_ functions — but the coverage is entirely dependent on Gemini generating correct SQL. There is no direct user-driven geometry manipulation. Carto's Workflows provide a more reliable, deterministic alternative for spatial operations via drag-and-drop tools, though they require more spatial knowledge than Spatia's natural language approach.
 
 ---
 
 ### Map Visualization and Styling
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Interactive map (pan/zoom) | Yes | Yes | Yes | Competitive |
-| Scatter/point layer (Deck.gl) | Yes | Yes | Yes | Competitive |
-| Heatmap layer | Yes (implemented) | Yes | Limited | Competitive |
-| Hexbin layer | Yes (implemented) | Yes | No | **Spatia Advantage** |
-| Line/polygon layers (GeoJSON) | Yes | Yes | Yes | Competitive |
-| Custom basemap selection | No (CartoDB dark only) | Yes | Yes | **Critical Gap** |
-| Symbol/color customization | No (hardcoded) | Yes | Yes | **Critical Gap** |
-| Layer opacity / blending | No | Yes | Partial | Important Gap |
-| Map legend | No | Yes | Yes | **Critical Gap** |
-| Map annotations / labels | No | Yes | Yes | Important Gap |
-| Print-quality map export | No | Yes | Yes | **Critical Gap** |
-| Map scale bar / north arrow | No | Yes | Yes | Nice-to-Have |
-| Multiple simultaneous layers | Partial (base + analysis + table) | Yes | Limited | Important Gap |
-| Choropleth / graduated symbols | Via AI SQL only | Yes | Yes | Important Gap |
-| PMTiles vector tiles | Yes | No (ESRI tiles) | No | **Spatia Advantage** |
-| Offline map tiles | Yes | Limited | No | **Spatia Advantage** |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Interactive map (pan/zoom) | Yes | Yes | Yes | Yes (Builder) | Competitive |
+| Scatter/point layer (Deck.gl) | Yes | Yes | Yes | Yes (deck.gl native) | Competitive |
+| Heatmap layer | Yes (implemented) | Yes | Limited | Yes | Competitive |
+| Hexbin layer | Yes (implemented) | Yes | No | Yes (H3 hexagons) | Competitive (Carto uses H3) |
+| Line/polygon layers (GeoJSON) | Yes | Yes | Yes | Yes | Competitive |
+| Custom basemap selection | No (CartoDB dark only) | Yes | Yes | Yes (Carto basemaps + custom) | **Critical Gap** |
+| Symbol/color customization | No (hardcoded) | Yes | Yes | Yes (Builder styling) | **Critical Gap** |
+| Layer opacity / blending | No | Yes | Partial | Yes | Important Gap |
+| Map legend | No | Yes | Yes | Yes (auto-generated) | **Critical Gap** |
+| Map annotations / labels | No | Yes | Yes | Yes | Important Gap |
+| Print-quality map export | No | Yes | Yes | Yes (PNG) | **Critical Gap** |
+| Map scale bar / north arrow | No | Yes | Yes | Partial | Nice-to-Have |
+| Multiple simultaneous layers | Partial (base + analysis + table) | Yes | Limited | Yes (unlimited layers) | Important Gap |
+| Choropleth / graduated symbols | Via AI SQL only | Yes | Yes | Yes (Builder — core feature) | Important Gap |
+| Billions of points rendering | No (1K limit) | Limited | Limited | Yes (deck.gl + cloud tiling) | Important Gap (vs Carto) |
+| PMTiles vector tiles | Yes | No (ESRI tiles) | No | No (proprietary tiling) | **Spatia Advantage** |
+| Offline map tiles | Yes | Limited | No | No | **Spatia Advantage** |
 
 ---
 
 ### Charts and Dashboards
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Bar chart | Yes (Recharts) | Yes | Yes | Competitive |
-| Pie chart | Yes (Recharts) | Yes | Yes | Competitive |
-| Histogram | Yes (Recharts) | Yes | Yes | Competitive |
-| Line / time-series chart | No | Yes | Yes | Important Gap |
-| Scatter chart | No | Yes | Yes | Nice-to-Have |
-| Chart export (PNG/PDF) | No | Yes | Yes | **Critical Gap** |
-| Chart customization (colors, labels) | No | Yes | Yes | Important Gap |
-| Dashboard / multi-view layout | No | Yes | Yes | Important Gap |
-| Cross-filter (map + chart linked) | No | Yes | Yes | Important Gap |
-| Tabular results in chat | Yes (20 rows) | N/A | N/A | Competitive |
-| Saved / shareable dashboards | No | Yes | Yes | Nice-to-Have |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Bar chart | Yes (Recharts) | Yes | Yes | Yes (Builder widgets) | Competitive |
+| Pie chart | Yes (Recharts) | Yes | Yes | Yes | Competitive |
+| Histogram | Yes (Recharts) | Yes | Yes | Yes | Competitive |
+| Line / time-series chart | No | Yes | Yes | Yes | Important Gap |
+| Scatter chart | No | Yes | Yes | Yes | Nice-to-Have |
+| Chart export (PNG/PDF) | No | Yes | Yes | Yes | **Critical Gap** |
+| Chart customization (colors, labels) | No | Yes | Yes | Yes (Builder) | Important Gap |
+| Dashboard / multi-view layout | No | Yes | Yes | Yes (Builder — multi-widget dashboards) | Important Gap |
+| Cross-filter (map + chart linked) | No | Yes | Yes | Yes (Builder — linked widgets) | Important Gap |
+| Tabular results in chat | Yes (20 rows) | N/A | N/A | Via AI Agents | Competitive |
+| Saved / shareable dashboards | No | Yes | Yes | Yes (Builder — shareable URLs, embeddable) | Important Gap (vs Carto) |
+| Embeddable analytics | No | ArcGIS Online | Tableau Public | Yes (iframe embed, developer SDK) | Nice-to-Have |
 
 ---
 
 ### AI and ML Integration
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Natural language query → map | Yes | Limited | Partial (Ask Data) | **Spatia Advantage** |
-| AI data cleaning | Yes (multi-round) | No | Tableau Prep (rule-based) | **Spatia Advantage** |
-| SQL auto-generation | Yes | No | No | **Spatia Advantage** |
-| Multi-turn conversation | Yes | No | Limited | **Spatia Advantage** |
-| Schema-aware AI context | Yes | No | No | **Spatia Advantage** |
-| AI error recovery (auto-retry) | Yes | No | No | **Spatia Advantage** |
-| AI provider flexibility | No (Gemini only) | N/A | N/A | Important Gap |
-| Local / on-device AI | No | No | No | Nice-to-Have |
-| ML model inference | No | Yes (ArcGIS ML tools) | Limited | Nice-to-Have |
-| Predictive analytics | Via AI SQL | Yes | Yes | Partial |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Natural language query → map | Yes | Limited | Partial (Ask Data) | Yes (AI Agents in dashboards) | Competitive (Carto now overlaps) |
+| AI data cleaning | Yes (multi-round) | No | Tableau Prep (rule-based) | No | **Spatia Advantage** |
+| SQL auto-generation | Yes | No | No | Yes (AI Agents) | Competitive |
+| Multi-turn conversation | Yes | No | Limited | Yes (AI Agents — conversational) | Competitive |
+| Schema-aware AI context | Yes | No | No | Yes (AI Agents — warehouse-aware) | Competitive |
+| AI error recovery (auto-retry) | Yes | No | No | Unknown | **Spatia Advantage** |
+| AI-powered Workflows (MCP tools) | No | No | No | Yes (AI pipelines, MCP integration) | Important Gap (vs Carto) |
+| AI provider flexibility | No (Gemini only) | N/A | N/A | Unknown (likely OpenAI) | Important Gap |
+| Local / on-device AI | No | No | No | No | Nice-to-Have |
+| ML model inference | No | Yes (ArcGIS ML tools) | Limited | Partial (via cloud DW) | Nice-to-Have |
+| Predictive analytics | Via AI SQL | Yes | Yes | Via cloud DW | Partial |
+
+**Note:** Carto's 2025 launch of AI Agents significantly narrows what was previously a clear Spatia advantage in natural language spatial analysis. Carto's AI Agents operate within dashboard contexts with access to cloud data warehouse schemas. However, Spatia retains advantages in: (1) AI data cleaning (no Carto equivalent), (2) fully offline AI analysis, and (3) lower barrier to entry (no enterprise infrastructure required).
 
 ---
 
 ### Collaboration and Sharing
 
-| Feature | Spatia | ArcGIS Pro | Tableau | Gap Classification |
-|---|---|---|---|---|
-| Data export for handoff | No | Yes | Yes | **Critical Gap** |
-| Shareable link | No | ArcGIS Online | Tableau Public/Server | Important Gap |
-| Multi-user access | No | ESRI account | Yes | Not in scope (desktop) |
-| Version control / history | No | No | No | Nice-to-Have |
-| Embeddable maps | No | ArcGIS Online | Tableau Public | Not in scope (desktop) |
-| Comment / annotation layer | No | Yes | Yes | Nice-to-Have |
+| Feature | Spatia | ArcGIS Pro | Tableau | Carto | Gap Classification |
+|---|---|---|---|---|---|
+| Data export for handoff | No | Yes | Yes | Yes | **Critical Gap** |
+| Shareable link | No | ArcGIS Online | Tableau Public/Server | Yes (Builder — public/private URLs) | Important Gap |
+| Multi-user access | No | ESRI account | Yes | Yes (editor/viewer roles per plan) | Not in scope (desktop) |
+| Version control / history | No | No | No | Partial (Workflow versioning) | Nice-to-Have |
+| Embeddable maps | No | ArcGIS Online | Tableau Public | Yes (iframe + developer SDK) | Not in scope (desktop) |
+| Comment / annotation layer | No | Yes | Yes | Partial | Nice-to-Have |
+| API access to results | No | Yes | Yes | Yes (full REST API) | Nice-to-Have |
 
 ---
 
 ### Ease of Use and Learning Curve
 
-| Dimension | Spatia | ArcGIS Pro | Tableau | Assessment |
-|---|---|---|---|---|
-| Time to first result (new user) | < 10 min (target) | Hours–days | 30–60 min | **Spatia Advantage (potential)** |
-| GIS knowledge required | Low | High | Low | **Spatia Advantage** |
-| Onboarding / empty state UX | Yes (implemented) | Yes | Yes | Competitive |
-| In-app error guidance | Partial (API key banners) | Yes | Yes | Important Gap |
-| Documentation / help | Minimal | Extensive | Extensive | **Critical Gap** |
-| Setup complexity | Medium (PMTiles, env vars) | Low (installer) | Low (installer) | Important Gap |
-| Settings UI | None (env vars only) | Full GUI | Full GUI | **Critical Gap** |
+| Dimension | Spatia | ArcGIS Pro | Tableau | Carto | Assessment |
+|---|---|---|---|---|---|
+| Time to first result (new user) | < 10 min (target) | Hours–days | 30–60 min | 30–60 min (requires DW setup) | **Spatia Advantage (potential)** |
+| GIS knowledge required | Low | High | Low | Low–moderate | **Spatia Advantage** |
+| Onboarding / empty state UX | Yes (implemented) | Yes | Yes | Yes (14-day trial + demos) | Competitive |
+| In-app error guidance | Partial (API key banners) | Yes | Yes | Yes | Important Gap |
+| Documentation / help | Minimal | Extensive | Extensive | Extensive (docs + academy) | **Critical Gap** |
+| Setup complexity | Medium (PMTiles, env vars) | Low (installer) | Low (installer) | Medium (requires cloud DW account) | Important Gap |
+| Settings UI | None (env vars only) | Full GUI | Full GUI | Full GUI (web-based) | **Critical Gap** |
+| Infrastructure prerequisite | None (local files) | None | Tableau Cloud account | Cloud data warehouse (BigQuery/Snowflake/Redshift) | **Spatia Advantage** |
 
-**Note:** Spatia's onboarding is actively harmed by requiring manual PMTiles setup and env-var configuration. This is not discoverable by a non-technical user.
+**Note:** Spatia's onboarding is actively harmed by requiring manual PMTiles setup and env-var configuration. This is not discoverable by a non-technical user. However, Carto also has a significant onboarding barrier: users must have or create a cloud data warehouse account before Carto can analyze their data. Spatia's local-file approach is simpler once the setup friction is resolved.
 
 ---
 
 ### Deployment and Pricing
 
-| Dimension | Spatia | ArcGIS Pro | Tableau | Assessment |
-|---|---|---|---|---|
-| Offline capable | Yes (full) | Partial | No | **Spatia Advantage** |
-| Desktop install | Yes (Tauri) | Yes (Windows primary) | Yes | Competitive |
-| macOS support | Yes | Limited | Yes | **Spatia Advantage** |
-| Linux support | Yes (Tauri) | No | Yes | **Spatia Advantage** |
-| Air-gapped operation | Yes | Partial | No | **Spatia Advantage** |
-| Pricing | TBD | $1,500–$3,500+/year | $70–$840/user/year | **Spatia Advantage (potential)** |
-| License model | TBD | Subscription | Subscription | TBD |
-| IT deployment complexity | Medium | High | Medium | Competitive |
+| Dimension | Spatia | ArcGIS Pro | Tableau | Carto | Assessment |
+|---|---|---|---|---|---|
+| Offline capable | Yes (full) | Partial | No | No (cloud-native) | **Spatia Advantage** |
+| Desktop install | Yes (Tauri) | Yes (Windows primary) | Yes | No (browser-based) | Competitive |
+| macOS support | Yes | Limited | Yes | Yes (browser) | **Spatia Advantage** (native) |
+| Linux support | Yes (Tauri) | No | Yes | Yes (browser) | **Spatia Advantage** (native) |
+| Air-gapped operation | Yes | Partial | No | No | **Spatia Advantage** |
+| Self-hosted option | Yes (inherent — desktop) | No | Tableau Server | Yes (Strategic tier only) | **Spatia Advantage** |
+| Pricing | TBD | $1,500–$3,500+/year | $70–$840/user/year | ~$199+/month (enterprise, not public) | **Spatia Advantage (potential)** |
+| License model | TBD | Subscription | Subscription | Subscription (usage units + seats) | TBD |
+| IT deployment complexity | Medium | High | Medium | Medium-high (requires cloud DW) | Competitive |
+| Data sovereignty | Full (local DuckDB) | Partial | No (cloud) | No (cloud DW dependent) | **Spatia Advantage** |
 
 ---
 
@@ -238,23 +252,25 @@ These are the areas where Spatia is genuinely ahead of every named competitor an
 
 ### UVP 1: Local-First AI Geocoding
 
-No other tool in the target segment geocodes raw address data locally, offline, against real Overture Maps data with confidence scoring and a persistent cache. ArcGIS Pro requires ESRI locator licenses. Tableau does not geocode raw addresses at all. Felt and Kepler require uploading pre-geocoded data. This is a genuine capability gap that solves a painful real-world problem: most analyst data starts as address strings, not lat/lon coordinates.
+No other tool in the target segment geocodes raw address data locally, offline, against real Overture Maps data with confidence scoring and a persistent cache. ArcGIS Pro requires ESRI locator licenses. Tableau does not geocode raw addresses at all. Carto offers geocoding but only via cloud APIs against its Data Observatory — requiring both an enterprise subscription and internet connectivity. Felt and Kepler require uploading pre-geocoded data. This is a genuine capability gap that solves a painful real-world problem: most analyst data starts as address strings, not lat/lon coordinates.
 
 ### UVP 2: Natural Language Spatial SQL Without a SQL Background
 
-Spatia's AI chat generates and executes spatially-aware DuckDB SQL from plain English questions, with schema injection ensuring the AI knows what columns and tables actually exist. The user never writes SQL. ArcGIS Pro's Python/ModelBuilder path requires GIS training. Tableau's Ask Data is limited to BI aggregations and cannot perform true spatial operations (buffer, intersect, point-in-polygon). This lowers the barrier to spatial analysis from "requires GIS education" to "can type a question."
+Spatia's AI chat generates and executes spatially-aware DuckDB SQL from plain English questions, with schema injection ensuring the AI knows what columns and tables actually exist. The user never writes SQL. ArcGIS Pro's Python/ModelBuilder path requires GIS training. Tableau's Ask Data is limited to BI aggregations and cannot perform true spatial operations (buffer, intersect, point-in-polygon).
+
+**Carto competitive note:** Carto's AI Agents (launched 2025) now provide a similar natural language → spatial query experience within their Builder dashboards. This narrows what was previously a unique Spatia advantage. However, Spatia's approach differs in key ways: (1) Spatia works against local DuckDB data with no cloud infrastructure required, (2) Spatia's cleaning-geocoding-analysis pipeline is integrated end-to-end, and (3) Spatia's barrier to entry is dramatically lower (no enterprise contract, no data warehouse setup). The positioning shifts from "only tool with NL spatial queries" to "the only NL spatial query tool accessible to individual analysts and small teams."
 
 ### UVP 3: Fully Offline, Air-Gapped Operation
 
-Spatia can run with zero network connectivity once set up. All data stays local: DuckDB database, PMTiles vector tiles, Overture geocoding tables. For healthcare analysts, government contractors, journalists working with sensitive data, or users in low-bandwidth environments, this is a hard requirement that cloud tools cannot meet.
+Spatia can run with zero network connectivity once set up. All data stays local: DuckDB database, PMTiles vector tiles, Overture geocoding tables. For healthcare analysts, government contractors, journalists working with sensitive data, or users in low-bandwidth environments, this is a hard requirement that cloud tools cannot meet. Carto, Tableau, and Felt are all cloud-dependent. This UVP becomes stronger as data sovereignty regulations tighten globally.
 
 ### UVP 4: AI-Powered Data Cleaning Before Geocoding
 
-The multi-round Gemini cleaning pipeline normalizes address data before geocoding, increasing match rates without manual intervention. No competitor in the target segment combines cleaning, geocoding, and analysis in one pipeline.
+The multi-round Gemini cleaning pipeline normalizes address data before geocoding, increasing match rates without manual intervention. No competitor in the target segment — including Carto — combines AI cleaning, geocoding, and analysis in one automated pipeline. Carto's Workflows offer data transformation but not AI-driven data quality improvement.
 
 ### UVP 5: Zero Subscription, Zero ESRI Dependency
 
-Spatia's stack has no runtime dependency on any commercial spatial data provider (ESRI, Mapbox, Google Maps). PMTiles are open, Overture is open, DuckDB is open, Tauri is open. The Gemini API key and optional Geocodio key are the only paid external dependencies, and both are user-supplied.
+Spatia's stack has no runtime dependency on any commercial spatial data provider (ESRI, Mapbox, Google Maps). PMTiles are open, Overture is open, DuckDB is open, Tauri is open. The Gemini API key and optional Geocodio key are the only paid external dependencies, and both are user-supplied. By contrast, Carto requires an enterprise subscription (~$199+/month minimum) and a cloud data warehouse account (BigQuery, Snowflake, or Redshift) — adding both direct and infrastructure costs that are prohibitive for individual analysts and small teams.
 
 ---
 
@@ -266,7 +282,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** Every analyst workflow ends with sharing results. A tool that produces a map the user cannot share or a result set they cannot export into a report is a dead end. Even if everything else works perfectly, the inability to export makes Spatia unsuitable for any professional workflow. This is not a convenience feature — it is a fundamental requirement for the tool to have any value beyond exploration.
 
-**How competitors handle it:** ArcGIS Pro exports to every major format. Tableau exports to Excel, PDF, and Tableau format. Even Kepler.gl exports GeoJSON. This is table stakes.
+**How competitors handle it:** ArcGIS Pro exports to every major format. Tableau exports to Excel, PDF, and Tableau format. Carto exports CSV and GeoJSON from Builder and via API. Even Kepler.gl exports GeoJSON. This is table stakes.
 
 **Suggested approach for Spatia:** Implement in order: (1) CSV export of any table from the FileList panel, (2) GeoJSON export of the current analysis_result view, (3) PNG export of the current map viewport. The first two are Rust/DuckDB operations. The third requires a MapLibre canvas capture.
 
@@ -278,7 +294,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** The target user — a market analyst or city planner — will not open a terminal to set environment variables. They will not know what a PMTiles file is or where to put it. The onboarding wall is insurmountable for the target persona without a UI-based configuration path. A user who cannot get past initial setup never experiences Spatia's genuine advantages.
 
-**How competitors handle it:** Every competitor uses a GUI-based settings panel or guided onboarding wizard.
+**How competitors handle it:** Every competitor uses a GUI-based settings panel or guided onboarding wizard. Carto offers a 14-day free trial with demo datasets pre-loaded, eliminating the cold-start problem entirely.
 
 **Suggested approach for Spatia:** A settings panel (accessible from the toolbar) should allow: entering API keys (stored securely via Tauri's secure storage), selecting PMTiles files via a file picker dialog, and testing configuration (verify API keys respond, verify PMTiles are valid). API keys should never be written to env files by the app — use Tauri's keystore or an app-local config file.
 
@@ -290,7 +306,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** A map without a legend is not a finished analytical artifact. It cannot be shared in a report, presented in a meeting, or used as evidence for a decision. This gap directly undercuts the core use case of "view results on map."
 
-**How competitors handle it:** All GIS tools and BI tools provide automatic legend generation tied to the active layer's symbology.
+**How competitors handle it:** All GIS tools and BI tools provide automatic legend generation tied to the active layer's symbology. Carto Builder auto-generates legends for all layer types including choropleths and graduated symbols.
 
 **Suggested approach for Spatia:** Auto-generate a legend panel within the map view that reflects: (1) the current Deck.gl layer type and its color encoding, (2) the data source name, (3) for quantitative scales, the min/max range. This can be a fixed-position overlay inside MapView rendered from the appStore's current layer state.
 
@@ -302,7 +318,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** "I made a map in Spatia" is only useful if the map can exit Spatia. Journalists writing data stories, planners presenting to councils, researchers publishing papers — all need a static map image. Without export, Spatia is a workflow tool with no deliverable.
 
-**How competitors handle it:** ArcGIS Pro has full print layouts with north arrows and scale bars. Tableau exports PDF and PNG. Kepler.gl exports PNG.
+**How competitors handle it:** ArcGIS Pro has full print layouts with north arrows and scale bars. Tableau exports PDF and PNG. Carto Builder exports map images as PNG. Kepler.gl exports PNG.
 
 **Suggested approach for Spatia:** MapLibre GL's canvas can be captured as a PNG via `map.getCanvas().toDataURL()`. Wire this to a "Export Map" button. Initially ship without print layout framing (no north arrow, no scale bar) — just the current viewport as PNG.
 
@@ -314,7 +330,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** CartoDB dark is appropriate for exploratory data visualization in developer contexts but is inappropriate for formal reports, presentations, or publication. A city planner presenting to a city council cannot present a dark-themed map. A real estate analyst including a map in a pitch deck needs a clean, light basemap.
 
-**How competitors handle it:** All map-centric tools offer at least 3–5 basemap options. Felt's entire value proposition is attractive, contextual basemaps.
+**How competitors handle it:** All map-centric tools offer at least 3–5 basemap options. Felt's entire value proposition is attractive, contextual basemaps. Carto offers its own suite of basemaps plus custom basemap support — notably, Carto's dark basemap (CartoDB dark matter) is the same one Spatia currently uses as its only option.
 
 **Suggested approach for Spatia:** Add a basemap selector to the map toolbar offering at minimum: CartoDB Dark, CartoDB Light (Positron), and OpenStreetMap. All three are free-to-use tile services. This is a small UI change with significant professional presentation impact. If the offline constraint is important for a given use case, the PMTiles can serve as an offline basemap option.
 
@@ -326,7 +342,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** Real-world spatial analysis involves combining point data (addresses from CSV) with polygon data (census tracts, administrative boundaries, service areas). Without polygon ingestion, spatial joins and geographic aggregations are impossible even via AI SQL. The "which census tract" class of questions cannot be answered without boundary data.
 
-**How competitors handle it:** ArcGIS Pro and QGIS handle 50+ spatial formats. Even Kepler.gl and Felt accept GeoJSON. CSV-only is a hard constraint that makes complex spatial analysis impossible.
+**How competitors handle it:** ArcGIS Pro and QGIS handle 50+ spatial formats. Carto imports CSV, Shapefile, and GeoJSON, plus connects natively to BigQuery, Snowflake, and Redshift. Even Kepler.gl and Felt accept GeoJSON. CSV-only is a hard constraint that makes complex spatial analysis impossible.
 
 **Suggested approach for Spatia:** DuckDB's spatial extension supports reading GeoJSON natively via `ST_Read`. Shapefile support requires the `spatial` extension's GDAL bindings (available in DuckDB 1.4.4). Extending the ingest pipeline to accept `.geojson` and `.shp` files is the highest-leverage import addition.
 
@@ -350,7 +366,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** The target personas (market analysts, academic researchers, journalists) include SQL-literate users who will hit the AI's limits quickly. When the AI generates incorrect SQL, the user has no recourse but to re-prompt. A SQL console provides a direct escape hatch and builds user trust by making the AI's work transparent.
 
-**How competitors handle it:** DBeaver, pgAdmin, and QGIS DB Manager all provide direct SQL access. Even no-code tools like Retool expose SQL when needed.
+**How competitors handle it:** DBeaver, pgAdmin, and QGIS DB Manager all provide direct SQL access. Carto Workflows allow users to build deterministic spatial analysis pipelines via drag-and-drop when AI-generated queries are insufficient. Even no-code tools like Retool expose SQL when needed.
 
 **Suggested approach for Spatia:** A collapsible SQL editor panel in the ChatCard that shows the last AI-generated SQL and allows the user to edit and re-execute it. This does not need to be a full SQL IDE — just an editable text area with a Run button. Execution must still go through the existing safety validator.
 
@@ -362,7 +378,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** The target user is not a GIS practitioner. They do not have a mental model for what "spatial analysis" means. Without contextual guidance — example queries, capability descriptions, setup instructions — the app will feel opaque and users will abandon it before reaching the "aha" moment.
 
-**How competitors handle it:** Tableau has extensive in-product help, sample workbooks, and a tooltip on every UI element. Felt has guided onboarding. QGIS has a built-in documentation browser.
+**How competitors handle it:** Tableau has extensive in-product help, sample workbooks, and a tooltip on every UI element. Carto provides extensive documentation, a learning academy, demo datasets, and contextual help within Builder. Felt has guided onboarding. QGIS has a built-in documentation browser.
 
 **Suggested approach for Spatia:** (1) Tooltip labels on all UI controls (currently unlabeled icon buttons), (2) Example query chips in the ChatCard when no conversation is in progress (e.g., "Show me a heatmap of all points", "Which areas have the highest density?"), (3) A link to web documentation from the settings panel.
 
@@ -374,7 +390,7 @@ Spatia's stack has no runtime dependency on any commercial spatial data provider
 
 **Why it matters:** A user who asks "show me all 3,500 customers in the Pacific Northwest" sees 1,000 points on the map and may believe that is the full answer. Silent truncation without a visible indicator erodes trust in the tool's analytical accuracy. For tabular queries (aggregations, top-N) the 20-row limit means any query returning more than 20 rows produces an incomplete table.
 
-**How competitors handle it:** ArcGIS Pro and QGIS render all features (within hardware limits) with explicit feedback on feature counts. Tableau uses extracts and streaming for large datasets.
+**How competitors handle it:** ArcGIS Pro and QGIS render all features (within hardware limits) with explicit feedback on feature counts. Tableau uses extracts and streaming for large datasets. Carto Builder renders billions of data points via cloud-side tiling and deck.gl, making this a non-issue at any scale.
 
 **Suggested approach for Spatia:** (1) Show an explicit count badge on the map layer indicating "showing X of Y features" when truncation occurs, (2) Increase the tabular result limit to 100 rows with pagination, (3) Add a "Download full result as CSV" link when truncation is active. The underlying DuckDB result can return the full count with a single `COUNT(*)` query before truncation.
 
@@ -513,6 +529,20 @@ These features capitalize on Spatia's unique architecture — local-first, AI-na
 
 ---
 
+### Risk 7: Carto's Agentic GIS May Close the AI Analysis Gap for Enterprise Users
+
+**Description:** Carto launched AI Agents in 2025, providing natural language spatial queries within Builder dashboards. This directly overlaps Spatia's core UVP of "natural language → spatial analysis." Carto has the advantage of enterprise distribution (existing customer base in transportation, retail, real estate, urban planning), cloud data warehouse integration (BigQuery, Snowflake, Redshift), 100+ Workflow tools for deterministic spatial operations, and a Data Observatory with 12,000+ curated datasets. If Carto successfully makes AI Agents accessible to mid-market teams (not just enterprise), Spatia's target users may see Carto as the safer choice.
+
+**Probability:** Medium-High. Carto is actively investing in this direction and has the distribution advantage.
+
+**Impact:** High. If Carto offers a comparable NL spatial query experience with enterprise backing, Spatia's differentiation narrows to three pillars: (1) offline/local-first operation, (2) AI data cleaning, and (3) zero-subscription accessibility. These are real but niche differentiators compared to Carto's breadth.
+
+**What needs validation:** (1) Monitor Carto's AI Agent capabilities vs. Spatia's — can Carto's agents handle the same query types from raw CSV data without pre-existing cloud DW setup? (2) Track whether Carto introduces a lower-cost tier or free tier targeting individual analysts. (3) Validate whether Spatia's target personas (individual analysts, small teams, budget-constrained orgs) would even consider Carto given its enterprise pricing and infrastructure requirements.
+
+**Mitigation:** Double down on Spatia's unique advantages that Carto structurally cannot replicate: offline operation, local-first data sovereignty, zero-infrastructure setup (once settings UI is built), and the integrated clean-geocode-analyze pipeline. Position explicitly against Carto: "Spatia is what Carto would be if it worked offline, cost nothing, and didn't require a cloud data warehouse."
+
+---
+
 ### Key Assumptions Requiring Validation
 
 1. **Target users will tolerate AI errors** as long as there is a clear path to correction. Current evidence is insufficient.
@@ -520,24 +550,34 @@ These features capitalize on Spatia's unique architecture — local-first, AI-na
 3. **DuckDB spatial SQL coverage** via Gemini prompt engineering is sufficient for the "80% of spatial questions analysts actually ask" without requiring direct SQL access. This needs measurement.
 4. **The offline constraint is a genuine differentiator** rather than an edge case. Validate how many target users are in environments where cloud tools are prohibited or unreliable.
 5. **Analysts will invest in setup** (PMTiles, Overture extract) if the value proposition is clear. Currently unvalidated.
+6. **Carto's enterprise pricing and DW requirement will remain a barrier** for Spatia's target persona. If Carto introduces a free or low-cost individual tier with CSV upload support, Spatia's positioning weakens significantly. Monitor Carto pricing changes.
 
 ---
 
 ## Summary Scorecard
 
-| Category | Current State | Gap Severity | Phase to Address |
-|---|---|---|---|
-| Data Import | CSV only | Critical | Phase 2 (GeoJSON/Shapefile) |
-| Data Export | None | **Critical — Blocking** | Phase 1 |
-| Geocoding | Best-in-class | Advantage | Maintain |
-| AI Analysis | Best-in-class | Advantage | Maintain + harden |
-| Map Visualization | Functional | Critical gaps (legend, basemap) | Phase 1 |
-| Map Export | None | **Critical — Blocking** | Phase 1 |
-| Charts | Basic (3 types) | Adequate for MVP | Phase 2 |
-| Settings / Config | None (env vars) | **Critical — Blocking** | Phase 1 |
-| Spatial Operators | AI-mediated only | Important | Phase 2–3 |
-| Sharing / Export | None | **Critical — Blocking** | Phase 1 |
-| Learning Curve | Low (potential) | Partially blocked by setup | Phase 1 |
-| Offline Operation | Best-in-class | Advantage | Maintain |
+| Category | Current State | vs ArcGIS Pro | vs Tableau | vs Carto | Phase to Address |
+|---|---|---|---|---|---|
+| Data Import | CSV only | Large gap | Moderate gap | Moderate gap | Phase 2 (GeoJSON/Shapefile) |
+| Data Export | None | **Critical gap** | **Critical gap** | **Critical gap** | Phase 1 |
+| Geocoding | Best-in-class | **Advantage** (local + free) | **Strong advantage** | **Advantage** (offline) | Maintain |
+| AI Analysis | Strong | **Advantage** | **Advantage** | Competitive (Carto AI Agents) | Maintain + harden |
+| Map Visualization | Functional | Large gap | Moderate gap | Large gap | Phase 1 |
+| Map Export | None | **Critical gap** | **Critical gap** | **Critical gap** | Phase 1 |
+| Charts / Dashboards | Basic (3 types) | Large gap | Large gap | Moderate gap | Phase 2 |
+| Settings / Config | None (env vars) | **Critical gap** | **Critical gap** | **Critical gap** | Phase 1 |
+| Spatial Operators | AI-mediated only | Large gap | **Advantage** | Moderate gap (Workflows) | Phase 2–3 |
+| Collaboration | None | Moderate gap | Large gap | Large gap | Not in scope (desktop) |
+| Learning Curve | Low (potential) | **Advantage** | Competitive | **Advantage** (no DW needed) | Phase 1 |
+| Offline / Data Sovereignty | Best-in-class | **Advantage** | **Strong advantage** | **Strong advantage** | Maintain |
+| Pricing | TBD (free/open?) | **Strong advantage** | **Advantage** | **Strong advantage** | Maintain |
 
-**Overall market readiness:** Pre-launch. The AI analysis and geocoding capabilities are genuinely differentiated and production-quality. However, four Critical-Blocking gaps (no export, no settings UI, no legend, no map export) mean the current build cannot be positioned as a complete product for any professional workflow. Phase 1 completion is a prerequisite for any public launch positioning.
+### Competitive Position Summary
+
+**vs ArcGIS Pro:** Spatia wins on accessibility, learning curve, pricing, and AI-first analysis. Loses heavily on spatial depth, data format support, visualization maturity, and enterprise features. Target users are ArcGIS Pro non-adopters, not switchers.
+
+**vs Tableau:** Spatia wins on geocoding, spatial analysis, offline operation, and AI depth. Loses on dashboards, chart variety, collaboration, and ecosystem maturity. Target users are Tableau users who hit the spatial analysis wall.
+
+**vs Carto:** This is the most nuanced competitive relationship. Carto is the closest direct competitor with overlapping AI capabilities (AI Agents) and spatial analysis depth (Workflows). Spatia wins on: offline/local-first operation, zero-subscription accessibility, AI data cleaning, and barrier to entry (no cloud DW required). Carto wins on: visualization at scale (billions of points), Workflows (deterministic spatial ops), Data Observatory (12K+ datasets), collaboration, and enterprise features. Target users are analysts who cannot or will not adopt Carto's enterprise pricing and cloud infrastructure requirements.
+
+**Overall market readiness:** Pre-launch. The AI analysis and geocoding capabilities are genuinely differentiated and production-quality. However, four Critical-Blocking gaps (no export, no settings UI, no legend, no map export) mean the current build cannot be positioned as a complete product for any professional workflow. Phase 1 completion is a prerequisite for any public launch positioning. The emergence of Carto's AI Agents adds urgency — Spatia's window of differentiation on NL spatial queries is narrowing, making speed to market on Phase 1 items critical.
