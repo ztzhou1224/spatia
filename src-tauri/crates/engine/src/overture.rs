@@ -324,10 +324,15 @@ fn has_column(conn: &Connection, table_name: &str, column: &str) -> EngineResult
 }
 
 fn ensure_extensions(conn: &Connection) -> EngineResult<()> {
-    conn.execute("INSTALL spatial", [])?;
-    conn.execute("LOAD spatial", [])?;
-    conn.execute("INSTALL httpfs", [])?;
-    conn.execute("LOAD httpfs", [])?;
+    // Try LOAD first (succeeds when the extension is already cached locally).
+    if conn.execute("LOAD spatial", []).is_err() {
+        conn.execute("INSTALL spatial", [])?;
+        conn.execute("LOAD spatial", [])?;
+    }
+    if conn.execute("LOAD httpfs", []).is_err() {
+        conn.execute("INSTALL httpfs", [])?;
+        conn.execute("LOAD httpfs", [])?;
+    }
     Ok(())
 }
 

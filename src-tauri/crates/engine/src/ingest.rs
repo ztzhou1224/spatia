@@ -21,7 +21,17 @@ pub fn ingest_csv_to_table(db_path: &str, csv_path: &str, table_name: &str) -> E
 }
 
 fn ensure_spatial_extension(conn: &Connection) -> EngineResult<()> {
-    conn.execute("INSTALL spatial", [])?;
+    // Try LOAD first (succeeds if already installed/cached).
+    if conn.execute("LOAD spatial", []).is_ok() {
+        return Ok(());
+    }
+    // Fall back to INSTALL + LOAD. In network-restricted environments the
+    // INSTALL may fail; since CSV ingestion itself does not require spatial
+    // functions we log a warning and continue rather than failing hard.
+    if let Err(e) = conn.execute("INSTALL spatial", []) {
+        tracing::warn!("spatial extension unavailable (INSTALL failed: {e}); CSV ingestion will proceed without it");
+        return Ok(());
+    }
     conn.execute("LOAD spatial", [])?;
     Ok(())
 }
