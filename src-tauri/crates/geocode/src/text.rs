@@ -32,7 +32,7 @@ pub fn components_from_columns(
         .join(", ");
 
     let validated_zip = zip
-        .and_then(|z| extract_zip(z))
+        .and_then(extract_zip)
         .or_else(|| extract_zip(&full));
 
     let validated_state = state

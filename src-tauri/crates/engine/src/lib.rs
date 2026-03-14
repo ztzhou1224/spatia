@@ -25,6 +25,7 @@ pub use db_manager::DbManager;
 pub use executor::execute_command;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
+pub use overture::fetch_buildings_in_bbox;
 pub use overture::overture_extract_to_table;
 pub use overture::overture_geocode;
 pub use overture::overture_search;

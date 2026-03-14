@@ -596,6 +596,21 @@ fn drop_table(table_name: String) -> Result<String, String> {
     serde_json::to_string(&json).map_err(|e| e.to_string())
 }
 
+// ---- Building footprints ----
+
+#[tauri::command]
+async fn fetch_buildings_in_view(bbox_str: String) -> Result<String, String> {
+    let bbox = spatia_engine::BBox::parse(&bbox_str).map_err(|e| e.to_string())?;
+    spatia_engine::fetch_buildings_in_bbox(
+        db_path(),
+        bbox.xmin,
+        bbox.ymin,
+        bbox.xmax,
+        bbox.ymax,
+    )
+    .map_err(|e| e.to_string())
+}
+
 // ---- Analysis commands ----
 
 #[tauri::command]
@@ -1537,6 +1552,7 @@ pub fn run() {
                     geocode_table_column,
                     drop_table,
                     table_to_geojson,
+                    fetch_buildings_in_view,
                     analysis_chat,
                     generate_analysis_sql,
                     execute_analysis_sql,
@@ -1568,6 +1584,7 @@ pub fn run() {
                     geocode_table_column,
                     drop_table,
                     table_to_geojson,
+                    fetch_buildings_in_view,
                     analysis_chat,
                     generate_analysis_sql,
                     execute_analysis_sql,
