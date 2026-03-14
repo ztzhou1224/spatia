@@ -1182,4 +1182,108 @@ mod tests {
 
         cleanup_temp_db(&db_path);
     }
+
+    /// Reproduce the UPDATE column-not-found issue with CSV-ingested tables.
+    #[test]
+    fn csv_ingested_table_update_finds_columns() {
+        use std::io::Write;
+
+        let db_path = temp_db_path();
+        let csv_path = format!("{}.csv", &db_path[..db_path.len() - 7]);
+
+        // Write a CSV similar to commercial_property_portfolio
+        {
+            let mut f = fs::File::create(&csv_path).expect("create csv");
+            writeln!(f, "policy_number,insured_name,occupancy_code,stories,year_built,wildfire_score,distance_to_coast_mi,notes").unwrap();
+            writeln!(f, "CPL-001,Acme Corp,851,3,1987,2,1.2,some note").unwrap();
+            writeln!(f, "CPL-002,Beta Inc,623,2,2001,5,3.4,N/A").unwrap();
+        }
+
+        // Ingest via read_csv_auto (same as production ingest path)
+        let conn = Connection::open(&db_path).expect("open db");
+        conn.execute(
+            &format!("CREATE TABLE test_portfolio AS SELECT * FROM read_csv_auto('{}')", csv_path),
+            [],
+        )
+        .expect("create table from csv");
+
+        // Verify schema has all columns
+        let mut stmt = conn
+            .prepare("SELECT column_name FROM information_schema.columns WHERE table_name = 'test_portfolio' ORDER BY ordinal_position")
+            .unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        let mut col_names = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let name: String = row.get(0).unwrap();
+            col_names.push(name);
+        }
+        assert!(col_names.len() > 1, "Table should have multiple columns, got: {:?}", col_names);
+        assert!(col_names.contains(&"occupancy_code".to_string()), "Should contain occupancy_code");
+
+        // Try UPDATE with quoted column names (the pattern AI generates)
+        let update_result = conn.execute_batch(
+            r#"UPDATE test_portfolio SET "occupancy_code" = TRY_CAST("occupancy_code" AS INTEGER) WHERE "occupancy_code" IS NOT NULL;"#,
+        );
+        eprintln!("Quoted UPDATE result: {:?}", update_result);
+
+        // Try UPDATE with unquoted column names
+        let update_result2 = conn.execute_batch(
+            "UPDATE test_portfolio SET occupancy_code = TRY_CAST(occupancy_code AS INTEGER) WHERE occupancy_code IS NOT NULL;",
+        );
+        eprintln!("Unquoted UPDATE result: {:?}", update_result2);
+
+        // At least one should work
+        assert!(
+            update_result.is_ok() || update_result2.is_ok(),
+            "UPDATE should work. Quoted: {:?}, Unquoted: {:?}",
+            update_result, update_result2
+        );
+
+        let _ = fs::remove_file(&csv_path);
+        cleanup_temp_db(&db_path);
+    }
+
+    /// Verify that UPDATE works on VARCHAR columns from a CSV-ingested table
+    /// after the fallback ingestion path handles ragged CSVs.
+    #[test]
+    fn real_commercial_property_csv_update() {
+        let csv_path = "/home/user/spatia/data/commercial_property_portfolio.csv";
+        if !std::path::Path::new(csv_path).exists() {
+            eprintln!("Skipping: CSV not found at {}", csv_path);
+            return;
+        }
+
+        let db_path = temp_db_path();
+        let conn = Connection::open(&db_path).expect("open db");
+
+        // Use read_csv with explicit options (same as ingest fallback path)
+        conn.execute(
+            &format!(
+                "CREATE OR REPLACE TABLE commercial_property_portfolio AS \
+                 SELECT * FROM read_csv('{}', delim=',', header=true, auto_detect=true, null_padding=true)",
+                csv_path
+            ),
+            [],
+        ).expect("create table with explicit delim");
+
+        // Verify we got the expected columns
+        let col_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.columns \
+             WHERE table_name = 'commercial_property_portfolio'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert!(col_count >= 30, "Expected 30+ columns, got {}", col_count);
+
+        // Try UPDATEs on VARCHAR columns (the ones that failed in production)
+        for col in &["occupancy_code", "notes", "flood_zone"] {
+            let sql = format!(
+                r#"UPDATE commercial_property_portfolio SET "{c}" = NULLIF(TRIM("{c}"), '') WHERE "{c}" IS NOT NULL;"#,
+                c = col,
+            );
+            let result = conn.execute_batch(&sql);
+            assert!(result.is_ok(), "UPDATE on {} failed: {:?}", col, result);
+        }
+
+        cleanup_temp_db(&db_path);
+    }
 }
