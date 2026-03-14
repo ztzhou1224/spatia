@@ -142,7 +142,7 @@ pub fn build_analysis_retry_prompt(
     )
 }
 
-/// Retry prompt with optional column sample values.
+/// Retry prompt with optional column sample values and domain context.
 pub fn build_analysis_retry_prompt_with_samples(
     user_question: &str,
     table_schemas: &[(String, Vec<TableColumn>)],
@@ -150,11 +150,35 @@ pub fn build_analysis_retry_prompt_with_samples(
     error_message: &str,
     column_samples: Option<&HashMap<String, ColumnSamples>>,
 ) -> String {
+    build_analysis_retry_prompt_with_domain(
+        user_question,
+        table_schemas,
+        failed_sql,
+        error_message,
+        column_samples,
+        None,
+    )
+}
+
+/// Retry prompt with optional column sample values and domain context.
+pub fn build_analysis_retry_prompt_with_domain(
+    user_question: &str,
+    table_schemas: &[(String, Vec<TableColumn>)],
+    failed_sql: &str,
+    error_message: &str,
+    column_samples: Option<&HashMap<String, ColumnSamples>>,
+    domain_context: Option<&str>,
+) -> String {
     let schema_section = format_schema_with_samples(table_schemas, column_samples);
+
+    let domain_section = match domain_context {
+        Some(ctx) if !ctx.is_empty() => format!("\n{}\n", ctx),
+        _ => String::new(),
+    };
 
     format!(
         r#"The following DuckDB SQL failed to execute. Fix it and return a corrected version.
-
+{domain}
 ## User question
 {question}
 
@@ -178,6 +202,7 @@ pub fn build_analysis_retry_prompt_with_samples(
 8. For heatmap/hexbin visualizations, just return rows with lat/lon columns — the frontend handles spatial aggregation.
 9. When filtering on categorical/enum columns, use the EXACT values shown in the sample values above. Do not guess or expand abbreviations.
 "#,
+        domain = domain_section,
         question = user_question.trim(),
         schemas = schema_section,
         sql = failed_sql,
@@ -218,6 +243,15 @@ Rules:
 /// Build a system prompt for analysis chat that injects the current DuckDB
 /// schema as context before the user message is processed by the model.
 pub fn build_analysis_chat_system_prompt(table_name: &str, schema: &[TableColumn]) -> String {
+    build_analysis_chat_system_prompt_with_domain(table_name, schema, None)
+}
+
+/// Analysis chat system prompt with optional domain context.
+pub fn build_analysis_chat_system_prompt_with_domain(
+    table_name: &str,
+    schema: &[TableColumn],
+    domain_context: Option<&str>,
+) -> String {
     let schema_lines: Vec<String> = schema
         .iter()
         .map(|col| {
@@ -228,10 +262,15 @@ pub fn build_analysis_chat_system_prompt(table_name: &str, schema: &[TableColumn
         })
         .collect();
 
+    let domain_section = match domain_context {
+        Some(ctx) if !ctx.is_empty() => format!("\n{}\n", ctx),
+        _ => String::new(),
+    };
+
     format!(
         r#"You are Spatia's SQL analysis assistant.
 You are helping the user analyze geospatial data in DuckDB.
-
+{domain}
 ## Active table
 {table}
 
@@ -244,6 +283,7 @@ You are helping the user analyze geospatial data in DuckDB.
 3. If a requested field does not exist, state that clearly and suggest an alternative.
 4. Keep responses concise and action-oriented.
 "#,
+        domain = domain_section,
         table = table_name,
         schema = schema_lines.join("\n"),
     )
@@ -256,6 +296,16 @@ pub fn build_analysis_sql_prompt(
     schema: &[TableColumn],
     user_goal: &str,
 ) -> String {
+    build_analysis_sql_prompt_with_domain(table_name, schema, user_goal, None)
+}
+
+/// Analysis SQL prompt with optional domain context.
+pub fn build_analysis_sql_prompt_with_domain(
+    table_name: &str,
+    schema: &[TableColumn],
+    user_goal: &str,
+    domain_context: Option<&str>,
+) -> String {
     let schema_lines: Vec<String> = schema
         .iter()
         .map(|col| {
@@ -266,9 +316,14 @@ pub fn build_analysis_sql_prompt(
         })
         .collect();
 
+    let domain_section = match domain_context {
+        Some(ctx) if !ctx.is_empty() => format!("\n{}\n", ctx),
+        _ => String::new(),
+    };
+
     format!(
         r#"You are Spatia's DuckDB analysis SQL assistant.
-
+{domain}
 ## Input table
 {table}
 
@@ -286,6 +341,7 @@ pub fn build_analysis_sql_prompt(
 5. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) or ST_HexagonGrid — they do not exist in DuckDB.
 6. For heatmap/hexbin visualizations, just SELECT rows with lat/lon — the frontend handles spatial aggregation.
 "#,
+        domain = domain_section,
         table = table_name,
         schema = schema_lines.join("\n"),
         goal = user_goal.trim(),
@@ -329,6 +385,23 @@ pub fn build_unified_chat_prompt_with_samples(
     conversation_history: &[serde_json::Value],
     column_samples: Option<&HashMap<String, ColumnSamples>>,
 ) -> String {
+    build_unified_chat_prompt_with_domain(
+        table_schemas,
+        user_message,
+        conversation_history,
+        column_samples,
+        None,
+    )
+}
+
+/// Unified chat prompt with optional column samples and domain context.
+pub fn build_unified_chat_prompt_with_domain(
+    table_schemas: &[(String, Vec<TableColumn>)],
+    user_message: &str,
+    conversation_history: &[serde_json::Value],
+    column_samples: Option<&HashMap<String, ColumnSamples>>,
+    domain_context: Option<&str>,
+) -> String {
     let schema_section = format_schema_with_samples(table_schemas, column_samples);
 
     // Format conversation history (last 10 turns)
@@ -350,9 +423,14 @@ pub fn build_unified_chat_prompt_with_samples(
         }
     }
 
+    let domain_section = match domain_context {
+        Some(ctx) if !ctx.is_empty() => format!("\n{}\n", ctx),
+        _ => String::new(),
+    };
+
     format!(
         r#"You are Spatia's GIS analysis assistant. You help users analyze geospatial data stored in DuckDB tables.
-
+{domain}
 ## Available tables
 {schemas}
 
@@ -438,6 +516,7 @@ When filtering on categorical or enum columns, you MUST use the EXACT values sho
 
 Only include map_actions when relevant. sql can be empty string if no query is needed.
 "#,
+        domain = domain_section,
         schemas = schema_section,
         history = if history_section.is_empty() {
             "(none)".to_string()

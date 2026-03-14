@@ -73,43 +73,45 @@ Building features that _feel_ right to engineers but don't match how underwriter
 
 ---
 
-## Phase 1: Underwriting Domain Foundation (Priority: CRITICAL)
+## Phase 1: Platform + Domain Pack Architecture (Priority: CRITICAL — COMPLETE)
 
-Goal: Transform the generic GIS chat into an underwriting-aware analysis platform.
+Goal: Refactor Spatia into a clean Platform + Domain Pack architecture, then implement the insurance underwriting domain pack.
 
-### TASK-UW-01: Underwriter AI Agent — System Prompt & Persona (est: 4h, role: gis-tech-lead)
-- **Description**: Create a new AI agent persona: the **Underwriter Domain Expert**. This agent understands insurance terminology (COPE, PML, TIV, loss ratios, risk scores, exposure aggregation), knows how to interpret spatial risk data, and can guide analysis from an underwriting perspective. It serves as an always-available industry expert inside the chat.
-- **Implementation approach**:
-  - New prompt template in `spatia_ai` crate: `underwriter_system_prompt`
-  - Injected alongside the existing schema-aware system prompt
-  - Domain knowledge includes: COPE scoring, construction types, occupancy classes, protection classes, distance-to-hazard analysis, aggregation/accumulation zones, treaty/facultative boundaries
-  - The agent should be able to:
-    - Interpret user data in underwriting context ("this column looks like TIV — Total Insured Value")
-    - Suggest relevant analyses ("you should check concentration risk within a 1-mile radius")
-    - Explain results in underwriting terms ("this cluster represents a PML scenario")
-    - Flag data quality issues relevant to underwriting ("missing construction type on 23% of records")
-- **Acceptance criteria**:
-  - Chat responses demonstrate underwriting domain knowledge
-  - Agent correctly identifies common insurance data columns
-  - Agent suggests domain-appropriate spatial analyses
-  - Non-underwriting queries still work (agent doesn't force insurance context)
-- **Files**: `src-tauri/crates/ai/src/prompts.rs` (new prompt), `src-tauri/crates/ai/src/lib.rs` (expose), `src-tauri/src/lib.rs` (wire into chat_turn)
-- **Dependencies**: None
+### TASK-PLAT-01: DomainPack Abstraction (COMPLETE)
+- **Implementation**: Created `DomainPack` struct in `spatia_engine::domain_pack` with:
+  - `system_prompt_extension` — domain expertise injected into AI chat
+  - `column_detection_rules` — patterns to recognize industry columns (category, patterns, display_label)
+  - `ui_config` — assistant name, placeholder text, colors, map defaults
+  - `DomainPack::generic()` — extracts current hardcoded values (zero behavioral change)
+  - `DomainPack::insurance_underwriting()` — first domain pack
+  - `DomainPack::from_env()` — resolves from `SPATIA_DOMAIN_PACK` env var
+- **Files**: `src-tauri/crates/engine/src/domain_pack.rs` (new), `src-tauri/crates/engine/src/lib.rs`
 
-### TASK-UW-02: Insurance Data Column Recognition (est: 3h, role: senior-engineer)
-- **Description**: Extend the schema detection to recognize common insurance/underwriting columns beyond just addresses. This helps the AI agent provide better context and the app can offer smarter defaults.
-- **Recognized patterns**:
-  - **Financial**: TIV, total_insured_value, premium, deductible, limit, retention, loss, paid_loss, incurred_loss
-  - **COPE**: construction_type, occupancy, protection_class, external_exposure, year_built, stories, sq_ft, roof_type
-  - **Policy**: policy_number, policy_id, effective_date, expiration_date, line_of_business, coverage_type
-  - **Location**: latitude, longitude, address, city, state, zip, county, country, geocode_quality
-  - **Risk**: risk_score, hazard_score, flood_zone, wildfire_risk, wind_pool, earthquake_zone, distance_to_coast
-- **Acceptance criteria**:
-  - New `detect_insurance_columns` function in engine
-  - Returns categorized column mapping (financial, cope, policy, location, risk)
-  - Integrated into chat system prompt so AI has column context
-- **Files**: `src-tauri/crates/engine/src/schema.rs`, `src-tauri/crates/ai/src/prompts.rs`
-- **Dependencies**: None
+### TASK-PLAT-02: Domain Context Threading (COMPLETE)
+- **Implementation**: Added `domain_context: Option<&str>` to all prompt builders:
+  - `build_unified_chat_prompt_with_domain` — primary chat prompt
+  - `build_analysis_sql_prompt_with_domain` — SQL generation
+  - `build_analysis_chat_system_prompt_with_domain` — direct chat
+  - `build_analysis_retry_prompt_with_domain` — retry with domain context
+  - Original functions become zero-cost wrappers passing `None`
+- **Wiring**: `chat_turn`, `analysis_chat`, `generate_analysis_sql` in `lib.rs` now read `active_domain_pack()` and pass domain context
+- **Files**: `src-tauri/crates/ai/src/prompts.rs`, `src-tauri/crates/ai/src/lib.rs`, `src-tauri/src/lib.rs`
+
+### TASK-PLAT-03: Column Detection (COMPLETE)
+- **Implementation**: `detect_domain_columns()` in `domain_pack.rs` — pure function matching schema columns against rule patterns. `format_domain_column_annotations()` produces prompt-ready text. Wired into `chat_turn` to augment domain context.
+- **Files**: `src-tauri/crates/engine/src/domain_pack.rs`, `src-tauri/src/lib.rs`
+
+### TASK-PLAT-04: Frontend Parameterization (COMPLETE)
+- **Implementation**: `DomainPackConfig` type in appStore, fetched at startup via `get_domain_pack_config` Tauri command. `ChatCard`, `FileList`, `MapView` read from `domainConfig` instead of hardcoded strings/colors.
+- **Files**: `src/lib/appStore.ts`, `src/App.tsx`, `src/components/ChatCard.tsx`, `src/components/FileList.tsx`, `src/components/MapView.tsx`, `src-tauri/src/lib.rs`
+
+### TASK-UW-01: Insurance System Prompt (COMPLETE — via domain pack)
+- Insurance terminology, data interpretation rules, analysis workflow suggestions, and result interpretation guidance — all in `DomainPack::insurance_underwriting().system_prompt_extension`
+- Activated when `SPATIA_DOMAIN_PACK=insurance_underwriting`
+
+### TASK-UW-02: Insurance Column Detection (COMPLETE — via domain pack)
+- 24 column detection rules across 4 categories: financial, COPE, policy, risk
+- Detected columns are formatted and injected into the AI prompt alongside domain context
 
 ### TASK-UW-03: Risk Layer Data Model (est: 4h, role: senior-engineer)
 - **Description**: Define the DuckDB schema and ingestion path for risk/hazard overlay datasets. These are the datasets that will eventually be sold via subscription. Initial layers: wildfire risk zones, FEMA flood zones, wind speed contours.
@@ -226,55 +228,48 @@ Goal: Build the workflows that make underwriters choose Spatia over spreadsheets
 
 ---
 
-## New AI Agent: Underwriter Domain Expert
+## Underwriter Domain Expert (IMPLEMENTED via Domain Pack)
 
-### Purpose
-An always-available insurance industry expert embedded in the chat. Not a separate UI — it enriches the existing chat_turn with domain knowledge.
+### How it works
+The insurance underwriting domain pack injects domain expertise into the existing chat_turn pipeline via `system_prompt_extension`. No separate model or service — same Gemini call, richer context.
 
-### Capabilities
-1. **Data Interpretation**: Recognizes insurance data patterns, explains what columns mean, flags data quality issues relevant to underwriting
-2. **Analysis Guidance**: Suggests appropriate spatial analyses based on underwriting context (concentration, proximity, accumulation)
-3. **Result Explanation**: Translates analytical results into underwriting language (PML, risk appetite, treaty implications)
-4. **Regulatory Awareness**: Knows about admitted vs surplus lines, state-specific rules, catastrophe modeling concepts
-5. **Workflow Optimization**: Recommends next steps in the underwriting process based on current data state
-
-### Implementation
-- Implemented as an enhanced system prompt in `spatia_ai`, not a separate model or service
-- Activated contextually when insurance-related data is detected (via TASK-UW-02)
-- Falls back to general GIS analysis mode for non-insurance data
-- Uses the same Gemini model — no additional API cost
+### Activation
+Set `SPATIA_DOMAIN_PACK=insurance_underwriting` at startup. When active:
+- System prompt includes insurance terminology, data interpretation rules, and analysis suggestions
+- Column detection identifies financial, COPE, policy, and risk columns in user data
+- Detected columns are annotated in the prompt (e.g., "tiv -> Total Insured Value")
+- UI text, colors, and map defaults are customized for underwriting
 
 ### Example Interactions
-- User uploads `book_of_business.csv` → Agent: "I see TIV, construction type, and year built columns. This looks like a property portfolio. Want me to check concentration risk or run a COPE analysis?"
-- User: "Show me my exposure in Florida" → Agent generates SQL filtering FL properties, aggregates TIV, renders on map with hurricane zone overlay
-- User: "What's my PML here?" → Agent calculates aggregated TIV within catastrophe zones, explains the scenario
+- User uploads `book_of_business.csv` → AI sees detected columns (tiv, construction_type, flood_zone) and offers domain-relevant analysis
+- User: "Show me my exposure in Florida" → AI generates SQL with underwriting-aware interpretation
+- User: "What's my PML here?" → AI uses domain context to explain probable maximum loss scenarios
 
 ---
 
 ## Architecture Changes Summary
 
 ```
-Current:  CSV → Clean → Geocode → Chat (generic GIS) → Map
-Pivot:    CSV → Clean → Detect Insurance Columns → Geocode → Enrich with Risk Layers
-          → Chat (Underwriter Expert) → Spatial Analysis → Map + Reports
+Platform:     CSV → Clean → Geocode → Chat (domain-aware) → Map
+Domain Pack:  system prompt + column detection + UI config (injected at startup)
+Selection:    SPATIA_DOMAIN_PACK env var → DomainPack::from_env() → OnceLock
 ```
 
-### New Rust Modules
-- `src-tauri/crates/engine/src/risk_layers.rs` — Risk layer ingestion and management
-- `src-tauri/crates/engine/src/spatial_analysis.rs` — Distance, buffer, aggregation functions
-- `src-tauri/crates/engine/src/data_subscription.rs` — Manifest + download client
-- `src-tauri/src/license.rs` — License check + offline grace period
+### Platform + Domain Pack Architecture (IMPLEMENTED)
+- `src-tauri/crates/engine/src/domain_pack.rs` — DomainPack struct, detection, formatting, generic + insurance constructors
+- All prompt builders accept `domain_context: Option<&str>` — zero-cost when None
+- Frontend reads `DomainPackConfig` from Tauri at startup, falls back to generic defaults
+- Domain pack is immutable for app lifetime (OnceLock)
 
-### New Frontend Components
-- `src/components/Settings.tsx` — BYOK key management
-- `src/components/DataCatalog.tsx` — Subscription data layer browser
+### New/Planned Rust Modules
+- `src-tauri/crates/engine/src/risk_layers.rs` — Risk layer ingestion and management (Phase 2)
+- `src-tauri/crates/engine/src/spatial_analysis.rs` — Distance, buffer, aggregation functions (Phase 2)
+- `src-tauri/crates/engine/src/data_subscription.rs` — Manifest + download client (Phase 3)
+- `src-tauri/src/license.rs` — License check + offline grace period (Phase 3)
 
-### Modified Files
-- `src-tauri/crates/ai/src/prompts.rs` — Underwriter system prompt
-- `src-tauri/crates/engine/src/schema.rs` — Insurance column detection
-- `src-tauri/src/lib.rs` — New Tauri commands
-- `src/components/FileList.tsx` — Risk layer separation
-- `src/components/ChatCard.tsx` — Enhanced context display
+### New/Planned Frontend Components
+- `src/components/Settings.tsx` — BYOK key management (Phase 3)
+- `src/components/DataCatalog.tsx` — Subscription data layer browser (Phase 3)
 
 ---
 
@@ -304,22 +299,40 @@ Pivot:    CSV → Clean → Detect Insurance Columns → Geocode → Enrich with
 
 ## Handoff Notes for Tech Lead
 
-### Immediate priorities (this sprint):
-1. **TASK-UW-01** — The underwriter system prompt is the highest-leverage task. It transforms every chat interaction. Start here.
-2. **TASK-UW-02** — Insurance column detection feeds into the prompt. Do this alongside UW-01.
-3. **TASK-UW-03** — Risk layer data model is foundational for everything in Phase 2+3.
+### Completed (this sprint):
+1. **Platform + Domain Pack architecture** — DomainPack struct, prompt threading, column detection, frontend parameterization
+2. **Insurance Underwriting domain pack** — system prompt, 24 column detection rules, UI customization
+3. **All prompt builders** accept optional domain context with zero behavioral change when None
+
+### Immediate priorities (next sprint):
+1. **TASK-UW-03** — Risk layer data model is foundational for everything in Phase 2+3
+2. **TASK-UW-04** — Hazard proximity analysis commands (depends on UW-03)
+3. **TASK-SUB-01** — BYOK API key management UI
+
+### How to activate insurance mode:
+```bash
+SPATIA_DOMAIN_PACK=insurance_underwriting pnpm tauri dev
+```
+
+### How to add a new domain pack:
+1. Add a new constructor to `DomainPack` in `domain_pack.rs` (e.g., `DomainPack::commercial_real_estate()`)
+2. Add the match arm in `DomainPack::from_env()`
+3. Define: system prompt extension, column detection rules, UI config
+4. That's it — the platform threading is already in place
 
 ### Key decisions needed:
 - Risk layer file format: GeoParquet (recommended for DuckDB) vs GeoJSON vs PMTiles
 - Subscription server stack (out of scope for desktop app, but influences client design)
 - License check endpoint design (simple JWT validation recommended)
 - Whether to support multiple AI providers beyond Gemini (OpenAI, Claude) for BYOK flexibility
+- Whether to support runtime domain pack switching (currently startup-only via OnceLock)
 
 ### What NOT to change:
 - Core DuckDB architecture — it's working well
 - MapLibre + Deck.gl rendering stack — proven and performant
 - Tauri v2 shell — stable, no reason to migrate
 - SQL safety system — the identifier validation + blocklist approach is sound
+- Domain pack abstraction — it's intentionally simple (no plugin system, no dynamic loading)
 
 ### Quality gate remains:
 ```bash

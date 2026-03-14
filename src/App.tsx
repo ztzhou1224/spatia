@@ -14,12 +14,14 @@ function App() {
   const mapViewRef = useRef<MapViewHandle>(null);
   const fetchApiConfig = useAppStore((s) => s.fetchApiConfig);
   const fetchLogPath = useAppStore((s) => s.fetchLogPath);
+  const fetchDomainConfig = useAppStore((s) => s.fetchDomainConfig);
   const [fileListCollapsed, setFileListCollapsed] = useState(false);
 
   useEffect(() => {
     void fetchApiConfig();
     void fetchLogPath();
-  }, [fetchApiConfig, fetchLogPath]);
+    void fetchDomainConfig();
+  }, [fetchApiConfig, fetchLogPath, fetchDomainConfig]);
 
   const panelWidth = fileListCollapsed ? 44 : 300;
 
