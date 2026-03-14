@@ -105,6 +105,7 @@ export function WidgetPanel() {
           onClick={clearActiveWidget}
           className="shrink-0 text-muted-foreground hover:text-foreground transition-colors leading-none w-4 h-4 flex items-center justify-center rounded"
           aria-label="Close widget"
+          title="Close widget"
         >
           &#x2715;
         </button>

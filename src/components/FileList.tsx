@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -160,9 +160,10 @@ function TablePreview({ tableName }: { tableName: string }) {
 type FileListProps = {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onSettingsClick?: () => void;
 };
 
-export function FileList({ collapsed = false, onToggleCollapse }: FileListProps) {
+export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick }: FileListProps) {
   const tables = useAppStore((s) => s.tables);
   const addTable = useAppStore((s) => s.addTable);
   const updateTable = useAppStore((s) => s.updateTable);
@@ -348,6 +349,19 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
     }
   }
 
+  async function handleExportCsv(table: TableInfo) {
+    if (!isTauri()) return;
+    try {
+      const filePath = await save({
+        defaultPath: `${table.name}.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (filePath) {
+        await invoke("export_table_csv", { tableName: table.name, filePath });
+      }
+    } catch { /* ignore */ }
+  }
+
   async function handleDelete(table: TableInfo) {
     try {
       await invoke("drop_table", { tableName: table.name });
@@ -406,11 +420,26 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
           </button>
           <h2 className="text-sm font-semibold">Tables</h2>
         </div>
-        {isTauri() && (
-          <Button size="sm" onClick={() => void handleAddFiles()}>
-            + Add file
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {onSettingsClick && (
+            <button
+              onClick={onSettingsClick}
+              title="Settings"
+              className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              {/* Gear icon */}
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M5.7 1.3h2.6l.3 1.5.9.4 1.3-.8 1.8 1.8-.8 1.3.4.9 1.5.3v2.6l-1.5.3-.4.9.8 1.3-1.8 1.8-1.3-.8-.9.4-.3 1.5H5.7l-.3-1.5-.9-.4-1.3.8-1.8-1.8.8-1.3-.4-.9-1.5-.3V5.7l1.5-.3.4-.9-.8-1.3 1.8-1.8 1.3.8.9-.4.3-1.5z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+                <circle cx="7" cy="7" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+              </svg>
+            </button>
+          )}
+          {isTauri() && (
+            <Button size="sm" onClick={() => void handleAddFiles()}>
+              + Add file
+            </Button>
+          )}
+        </div>
       </div>
 
       {apiConfig !== null && !apiConfig.gemini && (
@@ -637,17 +666,31 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
                     </svg>
                     Preview
                   </button>
-                  <button
-                    onClick={() => void handleDelete(table)}
-                    disabled={isActive(table.status)}
-                    title="Delete table"
-                    className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
-                  >
-                    {/* Trash icon */}
-                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-                      <path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3M7.5 6v3M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {isTauri() && (
+                      <button
+                        onClick={() => void handleExportCsv(table)}
+                        title="Export as CSV"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {/* Download icon */}
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                          <path d="M6.5 1.5v7M6.5 8.5l-2.5-2.5M6.5 8.5l2.5-2.5M2 10.5h9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void handleDelete(table)}
+                      disabled={isActive(table.status)}
+                      title="Delete table"
+                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
+                    >
+                      {/* Trash icon */}
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                        <path d="M2 3.5h9M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v3M7.5 6v3M3.5 3.5l.5 7a1 1 0 001 1h3a1 1 0 001-1l.5-7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
 

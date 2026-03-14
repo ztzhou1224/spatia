@@ -34,6 +34,8 @@ spatia_engine = { path = "crates/engine" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
+base64 = "0.22"
+tauri-plugin-store = "2"
 
 [patch.crates-io]
 chrono = { git = "https://github.com/chronotope/chrono", tag = "v0.4.42" }
