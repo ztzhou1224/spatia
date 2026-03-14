@@ -66,4 +66,15 @@ Key architectural decisions:
 - `.claude/agent-testing-guide.md` -- how each agent uses testing/verification tools
 - Agent definitions in `.claude/agents/` -- test-engineer, product-manager, ui-design-architect all reference the guide
 
+## Geocoding Architecture Deep Dive (2026-03-14)
+- Separate `spatia_geocode` crate at `src-tauri/crates/geocode/`
+- Benchmark crate at `src-tauri/crates/geocode_bench/` with fuzzy accuracy mode (1296 variations of 500 Seattle addresses)
+- **Critical finding**: Tantivy path bypasses custom `score_candidate` scoring -- uses raw BM25 as confidence
+- Tantivy fuzzy only for tokens > 4 chars, edit distance 1 -- misses short word typos and double typos
+- LIKE fallback uses OR-based token filters (too permissive) with LIMIT 60 (too restrictive)
+- Leading sequence bonus (25% weight) kills reordered address accuracy
+- Cache uses exact string keys (no normalization), per-address queries (no batching)
+- Missing abbreviations: "wy"->"way", "trl"->"trail", "pt"->"point"
+- See full findings: `src-tauri/crates/geocode_bench/BENCHMARK_FINDINGS.md`
+
 See also: [codebase-patterns.md](codebase-patterns.md) for detailed technical patterns.
