@@ -6,13 +6,15 @@
 
 Spatia pivots from a general-purpose GIS desktop app to a **BYOK (Bring Your Own Key) AI-native desktop application** purpose-built for **insurance underwriters**. The app's core value proposition is: **analyze your proprietary portfolio data against spatial risk layers, entirely on your machine, with AI that understands underwriting.**
 
-### Strategic Context (from founder discussions)
+### Strategic Context
 
 1. **Monetization model**: The app itself is the distribution vehicle. The **curated hazard/risk datasets are the product**. Users need an active data subscription to get fresh wildfire, flood, wind, COPE, and other risk layers. A cracked app with stale data is worthless to a professional underwriter.
 
-2. **Google Ask Maps is not a threat**: Google's Ask Maps (launched 2026-03-12) is a consumer discovery tool ("find me a restaurant"). Spatia solves a fundamentally different job: "analyze my proprietary book of business against hazard data." Google can't touch proprietary data analysis, and their cloud-first model conflicts with our local-first privacy guarantee. Google actually _helps_ us by training the market to expect "talk to a map" interactions.
+2. **Competitive landscape** (from market fit analysis): Carto's 2025 AI Agents launch narrows what was previously a unique Spatia advantage on NL spatial queries. Google Ask Maps (2026-03-12) validates "talk to a map" UX but targets consumers. Spatia's moat is local-first privacy + domain-specific AI + curated risk data. Speed to market on table-stakes features is critical -- the window of differentiation is narrowing.
 
-3. **Competitive moat**: Local-first privacy (data never leaves the machine) + proprietary data analysis + domain-specific AI (underwriting expert agent) + curated risk data subscription. None of these overlap with consumer map products.
+3. **Market fit analysis key findings**: The absence of data export, settings UI, map legend, and map export are critical blockers that prevent adoption even among perfect-fit users. These must ship before any launch positioning. The analysis also validates that local-first is the acquisition channel and data/cloud services are the business model -- aligning with the risk data subscription strategy.
+
+4. **Competitive moat**: Local-first privacy (data never leaves the machine) + proprietary data analysis + domain-specific AI (underwriting expert agent) + curated risk data subscription. None of these overlap with consumer map products or enterprise-first tools like Carto.
 
 ---
 
@@ -565,13 +567,23 @@ Goal: Build insurance-specific capabilities that transform Spatia from a generic
 
 | Agent | Role | Primary Tasks |
 |-------|------|---------------|
-| senior-engineer | Implementation | TASK-UW-02/03/04, TASK-SUB-01/02/03, TASK-WF-01/02/03 |
-| gis-tech-lead | Architecture + coordination | TASK-UW-01, architecture review, sprint planning |
-| underwriter-expert (NEW) | Domain consultation | Advisory on all UW tasks, prompt design, workflow validation |
+| senior-engineer | Implementation | TASK-14 through 21 (table stakes), TASK-UW-03/04, TASK-SUB-01/02/03 |
+| gis-tech-lead | Architecture + coordination | Architecture review, sprint planning, market fit gap tracking |
+| underwriter-expert | Domain consultation | Advisory on all UW tasks, prompt design, workflow validation |
 | test-engineer | TDD + integration tests | Test plans for each phase, E2E coverage |
-| ui-design-architect | Component design | Settings panel, DataCatalog, risk assessment report |
+| ui-design-architect | Component design | TASK-17 (Settings), TASK-18 (Legend), TASK-21 (Tooltips) |
 | product-manager | Scoping + acceptance | User story refinement, acceptance criteria verification |
-| gis-domain-expert | Spatial analysis design | Advisory on TASK-UW-03/04, CRS/projection concerns |
+| gis-domain-expert | Spatial analysis design | Advisory on TASK-UW-03/04, TASK-22 (spatial import), CRS concerns |
+
+### Priority Sequencing
+
+**Sprint 1 (immediate):** Table-stakes features (TASK-14 through TASK-21) -- these are pre-launch blockers identified by the market fit analysis. No public launch without all 8 completed.
+
+**Sprint 2:** Risk layer infrastructure (TASK-UW-03, TASK-UW-04) + BYOK settings (TASK-SUB-01) -- foundational for monetization.
+
+**Sprint 3:** Competitive parity (TASK-22 through TASK-26) + data subscription client (TASK-SUB-02).
+
+**Sprint 4:** Underwriting workflows (TASK-WF-01 through TASK-WF-03) + go-to-market polish.
 
 ---
 

@@ -10,7 +10,7 @@ Quick-start memory file for constraints, invariants, and daily commands.
 
 **Monetization**: The app is the distribution vehicle. Curated hazard/risk datasets (wildfire, flood, wind, COPE) are the product, sold as a data subscription. A cracked app with stale data is useless to a professional underwriter.
 
-**Competitive moat**: Local-first privacy + proprietary data analysis + domain-specific AI (underwriter expert agent) + curated risk data subscription. Google Ask Maps (launched 2026-03-12) validates "talk to a map" UX but targets consumers, not underwriters.
+**Competitive moat**: Local-first privacy + proprietary data analysis + domain-specific AI (underwriter expert agent) + curated risk data subscription. Google Ask Maps (2026-03-12) validates "talk to a map" UX but targets consumers. Carto AI Agents (2025) overlap on NL spatial queries but require enterprise pricing and cloud DW infrastructure that Spatia's target users cannot justify.
 
 ## Feature Development Process (MANDATORY)
 
@@ -20,7 +20,7 @@ Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDEN
 
 - Frontend: React 19 + TypeScript + Vite, Radix UI, Zustand
 - Desktop shell: Tauri v2
-- Rust crates: `spatia_engine` (core), `spatia_ai` (Gemini, feature-gated), `spatia_cli`
+- Rust crates: `spatia_engine` (core + domain_pack), `spatia_ai` (Gemini, feature-gated), `spatia_cli`
 - Database: DuckDB + `spatial` / `httpfs`
 - Map runtime: MapLibre + PMTiles + Deck.gl (scatter, heatmap, hexbin)
 
@@ -45,7 +45,8 @@ Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDEN
 
 - App shell: `src/App.tsx` -- three-component flat layout (MapView, FileList, ChatCard)
 - Components: `src/components/MapView.tsx`, `FileList.tsx`, `ChatCard.tsx`
-- State: `src/lib/appStore.ts` (tables, chatMessages, analysisGeoJson, tableGeoJson, visualizationType, selectedTablesForChat, apiConfig)
+- State: `src/lib/appStore.ts` (tables, chatMessages, analysisGeoJson, tableGeoJson, visualizationType, selectedTablesForChat, apiConfig, domainConfig)
+- Domain pack: `src-tauri/crates/engine/src/domain_pack.rs` (Platform + DomainPack architecture)
 - Map actions: `src/lib/mapActions.ts`
 - Tauri commands: `src-tauri/src/lib.rs`
 - Engine: `src-tauri/crates/engine/src/`
