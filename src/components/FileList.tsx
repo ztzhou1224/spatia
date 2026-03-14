@@ -174,6 +174,7 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
   const selectedTablesForChat = useAppStore((s) => s.selectedTablesForChat);
   const toggleTableForChat = useAppStore((s) => s.toggleTableForChat);
   const logPath = useAppStore((s) => s.logPath);
+  const domainConfig = useAppStore((s) => s.domainConfig);
   const geocodeColRef = useRef<Record<string, string>>({});
   const [previewTable, setPreviewTable] = useState<string | null>(null);
 
@@ -430,14 +431,13 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
           }}
         >
           <div className="flex flex-col items-center gap-1">
-            <p className="text-sm font-semibold text-center">No data yet</p>
+            <p className="text-sm font-semibold text-center">{domainConfig.ui_config.empty_state_title}</p>
             <p className="text-xs text-muted-foreground text-center">
-              Spatia analyzes your location data with AI
+              {domainConfig.ui_config.empty_state_description}
             </p>
           </div>
           <p className="text-xs text-muted-foreground text-center leading-relaxed">
-            Upload a CSV with addresses to get started. Spatia will clean the
-            data, geocode the locations, and plot them on the map.
+            {domainConfig.ui_config.upload_instruction}
           </p>
           {isTauri() && (
             <Button
@@ -461,7 +461,7 @@ export function FileList({ collapsed = false, onToggleCollapse }: FileListProps)
             className="table-card p-2.5"
             style={
               table.status === "done"
-                ? { borderLeft: "3px solid #7c3aed" }
+                ? { borderLeft: `3px solid ${domainConfig.ui_config.primary_color}` }
                 : undefined
             }
           >

@@ -4,6 +4,18 @@
 
 Quick-start memory file for constraints, invariants, and daily commands.
 
+## Product Direction (as of 2026-03-14)
+
+**Pivot**: Spatia is now a **BYOK AI-native desktop app for insurance underwriters**. The core value proposition: analyze proprietary portfolio data against spatial risk layers, entirely on your machine, with AI that understands underwriting.
+
+**Monetization**: The app is the distribution vehicle. Curated hazard/risk datasets (wildfire, flood, wind, COPE) are the product, sold as a data subscription. A cracked app with stale data is useless to a professional underwriter.
+
+**Competitive moat**: Local-first privacy + proprietary data analysis + domain-specific AI (underwriter expert agent) + curated risk data subscription. Google Ask Maps (launched 2026-03-12) validates "talk to a map" UX but targets consumers, not underwriters.
+
+## Feature Development Process (MANDATORY)
+
+Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDENCE (web search for real-world scenarios) -> REFINE -> SPEC (Tech Lead) -> BUILD (Engineer) -> VERIFY (Test + PM + Underwriter Expert). No feature ships without underwriter domain validation and real-world evidence.
+
 ## Current Stack
 
 - Frontend: React 19 + TypeScript + Vite, Radix UI, Zustand
@@ -31,9 +43,9 @@ Quick-start memory file for constraints, invariants, and daily commands.
 2. DuckDB extensions are connection-scoped; load per connection.
 3. Overture release pinning is required for reproducible extracts.
 4. Temp DuckDB test cleanup should remove `.duckdb`, `.wal`, `.wal.lck`.
-5. Analysis SQL execution validates prefix (`CREATE [OR REPLACE] VIEW analysis_result AS ...`) and scans the body for 15 blocked keyword patterns (DROP, TRUNCATE, DELETE, ALTER, GRANT, etc.) using word-boundary regexes to avoid false positives on column names.
-6. User-facing DB path inputs are removed; app flows use fixed DB file path `src-tauri/spatia.duckdb`.
-7. Engine `geocode` command is now batch-first and local-first: it uses local fuzzy matching from Overture lookup tables before Geocodio fallback, and returns confidence/source metadata per result.
+5. Analysis SQL execution validates prefix (`CREATE [OR REPLACE] VIEW analysis_result AS ...`) and scans the body for 15 blocked keyword patterns using word-boundary regexes.
+6. User-facing DB path inputs are removed; app uses fixed DB file path `src-tauri/spatia.duckdb`.
+7. Engine `geocode` is batch-first and local-first: Overture fuzzy match -> Geocodio fallback -> persistent cache.
 
 ## Core Paths
 
@@ -45,13 +57,20 @@ Quick-start memory file for constraints, invariants, and daily commands.
 - Engine core: `src-tauri/crates/engine/src`
 - AI prompts/client: `src-tauri/crates/ai/src`
 
-## Operational Commands
+## Agent Team
 
-- Tauri dev: `pnpm tauri dev`
-- Frontend build: `pnpm build`
-- Rust tests: `cargo test --workspace`
-- Rust lint: `cargo clippy --workspace`
+| Agent | Role |
+|-------|------|
+| senior-engineer | Full-stack implementation |
+| gis-tech-lead | Architecture, specs, coordination |
+| underwriter-expert (NEW) | Domain validation gate, industry expertise |
+| product-manager | User stories, acceptance, verification |
+| test-engineer | TDD, integration tests, E2E |
+| ui-design-architect | Component design, UX |
+| gis-domain-expert | Spatial analysis advisory |
 
 ## Active Risks
 
-- AI env setup (`SPATIA_GEMINI_API_KEY`) and local PMTiles presence need clearer UX diagnostics (partially addressed with API key banners in FileList/ChatCard).
+- AI env setup (`SPATIA_GEMINI_API_KEY`) needs clearer UX diagnostics (partially addressed with banners).
+- Risk layer data model and subscription infrastructure not yet built.
+- Underwriter system prompt not yet implemented — chat is still generic GIS mode.

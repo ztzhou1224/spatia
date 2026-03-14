@@ -100,6 +100,7 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
   const tables = useAppStore((s) => s.tables);
   const activeWidget = useAppStore((s) => s.activeWidget);
   const setActiveWidget = useAppStore((s) => s.setActiveWidget);
+  const domainConfig = useAppStore((s) => s.domainConfig);
 
   const tableNames = Array.from(selectedTablesForChat).sort();
 
@@ -270,7 +271,7 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
                   className="text-xs text-muted-foreground mb-0.5"
                   style={msg.role === "user" ? { textAlign: "right" } : undefined}
                 >
-                  {msg.role === "user" ? "You" : "Spatia"}
+                  {msg.role === "user" ? "You" : domainConfig.assistant_name}
                 </p>
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 {msg.sql && (
@@ -342,10 +343,10 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
           onFocus={() => setExpanded(true)}
           placeholder={
             tables.length === 0
-              ? "Upload data to get started..."
+              ? domainConfig.ui_config.placeholder_no_data
               : tableNames.length === 0
-              ? "Select tables to add context..."
-              : "Ask about your data..."
+              ? domainConfig.ui_config.placeholder_no_selection
+              : domainConfig.ui_config.placeholder_ready
           }
           className="flex-1"
           disabled={loading}

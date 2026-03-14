@@ -53,6 +53,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
   const visualizationType = useAppStore((s) => s.visualizationType);
   const tableGeoJson = useAppStore((s) => s.tableGeoJson);
   const tables = useAppStore((s) => s.tables);
+  const domainConfig = useAppStore((s) => s.domainConfig);
 
   // Show welcome overlay when there are no tables and no analysis results
   const analysisFeatures = (analysisGeoJson as { features?: unknown[] })?.features ?? [];
@@ -67,11 +68,13 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
 
+    const { map_default_center, map_default_zoom } =
+      useAppStore.getState().domainConfig.ui_config;
     mapRef.current = new maplibregl.Map({
       container: containerRef.current,
       style,
-      center: [-122.4194, 37.7749],
-      zoom: 11,
+      center: map_default_center as [number, number],
+      zoom: map_default_zoom,
     });
 
     mapRef.current.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -162,7 +165,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         filter: ["==", ["geometry-type"], "Point"],
         paint: {
           "circle-radius": 6,
-          "circle-color": "#7c3aed",
+          "circle-color": domainConfig.ui_config.primary_color,
           "circle-stroke-width": 1,
           "circle-stroke-color": "#fff",
           "circle-opacity": 0.8,
@@ -176,7 +179,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         source: ANALYSIS_SOURCE_ID,
         filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
         paint: {
-          "fill-color": "#7c3aed",
+          "fill-color": domainConfig.ui_config.primary_color,
           "fill-opacity": 0.3,
         },
       });
@@ -188,7 +191,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         source: ANALYSIS_SOURCE_ID,
         filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]],
         paint: {
-          "line-color": "#7c3aed",
+          "line-color": domainConfig.ui_config.primary_color,
           "line-width": 2,
         },
       });
