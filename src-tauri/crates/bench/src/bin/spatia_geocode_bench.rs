@@ -1,16 +1,12 @@
-mod corpus;
-pub mod fuzzy_bench;
-mod report;
-mod runner;
-
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use tracing::info;
 
-use corpus::Corpus;
-use report::BenchReport;
-use runner::run_test;
+use spatia_bench::geocode_bench::corpus::Corpus;
+use spatia_bench::geocode_bench::fuzzy_bench;
+use spatia_bench::geocode_bench::report::BenchReport;
+use spatia_bench::geocode_bench::runner::run_test;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -171,8 +167,8 @@ fn main() {
     }
 
     if let Some(compare_path) = &cli.compare {
-        match report::load_previous_report(compare_path) {
-            Ok(prev) => report::print_regression_comparison(&prev, &report),
+        match spatia_bench::geocode_bench::report::load_previous_report(compare_path) {
+            Ok(prev) => spatia_bench::geocode_bench::report::print_regression_comparison(&prev, &report),
             Err(e) => tracing::warn!(
                 "failed to load comparison report '{}': {}",
                 compare_path,
@@ -201,12 +197,12 @@ fn run_fuzzy_mode(cli: &Cli) {
 
     if !Path::new(&gt_path).exists() {
         eprintln!("ERROR: ground truth CSV not found at '{}'", gt_path);
-        eprintln!("Run `cargo run -p spatia_geocode_bench --bin seed_fuzzy_bench` first.");
+        eprintln!("Run `cargo run -p spatia_bench --bin seed_fuzzy_bench` first.");
         std::process::exit(1);
     }
     if !Path::new(&var_path).exists() {
         eprintln!("ERROR: variations CSV not found at '{}'", var_path);
-        eprintln!("Run `cargo run -p spatia_geocode_bench --bin gen_fuzzy_variations` first.");
+        eprintln!("Run `cargo run -p spatia_bench --bin gen_fuzzy_variations` first.");
         std::process::exit(1);
     }
 

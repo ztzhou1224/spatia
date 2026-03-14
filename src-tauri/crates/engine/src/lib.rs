@@ -4,8 +4,6 @@ pub mod domain_pack;
 mod executor;
 mod export;
 mod identifiers;
-mod ingest;
-mod overture;
 mod schema;
 mod types;
 
@@ -18,19 +16,21 @@ pub use spatia_geocode::{
 };
 pub use spatia_geocode::search_index;
 
+// Re-export ingest crate's public API
+pub use spatia_ingest::{ingest_csv, ingest_csv_to_table};
+
+// Re-export overture crate's public API
+pub use spatia_overture::{
+    fetch_buildings_in_bbox, overture_extract_to_table, overture_geocode,
+    overture_search, BBox, OvertureExtractResult, OvertureGeocodeResult,
+    OvertureSearchResult, OVERTURE_RELEASE,
+};
+
 pub use analysis::execute_analysis_sql_to_geojson;
 pub use analysis::AnalysisExecutionResult;
 pub use analysis::TabularResult;
 pub use db_manager::DbManager;
 pub use executor::execute_command;
-pub use ingest::ingest_csv;
-pub use ingest::ingest_csv_to_table;
-pub use overture::fetch_buildings_in_bbox;
-pub use overture::overture_extract_to_table;
-pub use overture::overture_geocode;
-pub use overture::overture_search;
-pub use overture::BBox;
-pub use overture::OVERTURE_RELEASE;
 pub use schema::fetch_column_samples;
 pub use schema::raw_staging_schema;
 pub use schema::table_schema;

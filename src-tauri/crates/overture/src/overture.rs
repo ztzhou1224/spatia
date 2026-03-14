@@ -2,7 +2,7 @@ use duckdb::Connection;
 use serde::Serialize;
 
 use crate::identifiers::validate_table_name;
-use crate::EngineResult;
+use crate::OvertureResult;
 
 pub const OVERTURE_RELEASE: &str = "2026-02-18.0";
 
@@ -15,7 +15,7 @@ pub struct BBox {
 }
 
 impl BBox {
-    pub fn parse(input: &str) -> EngineResult<Self> {
+    pub fn parse(input: &str) -> OvertureResult<Self> {
         let parts: Vec<&str> = input.split(',').map(str::trim).collect();
         if parts.len() != 4 {
             return Err("bbox must be: xmin,ymin,xmax,ymax".into());
@@ -64,7 +64,7 @@ pub fn overture_extract_to_table(
     item_type: &str,
     bbox: BBox,
     table_name: Option<&str>,
-) -> EngineResult<OvertureExtractResult> {
+) -> OvertureResult<OvertureExtractResult> {
     let table = table_name
         .map(str::to_string)
         .unwrap_or_else(|| default_table_name(theme, item_type));
@@ -127,7 +127,7 @@ pub fn overture_search(
     table_name: &str,
     query: &str,
     limit: usize,
-) -> EngineResult<Vec<OvertureSearchResult>> {
+) -> OvertureResult<Vec<OvertureSearchResult>> {
     validate_table_name(table_name)?;
     if query.trim().is_empty() {
         return Err("search query cannot be empty".into());
@@ -176,7 +176,7 @@ pub fn overture_geocode(
     table_name: &str,
     query: &str,
     limit: usize,
-) -> EngineResult<Vec<OvertureGeocodeResult>> {
+) -> OvertureResult<Vec<OvertureGeocodeResult>> {
     validate_table_name(table_name)?;
     if query.trim().is_empty() {
         return Err("geocode query cannot be empty".into());
@@ -230,7 +230,7 @@ pub fn overture_geocode(
     Ok(out)
 }
 
-fn create_lookup_table(conn: &Connection, table_name: &str, theme: &str) -> EngineResult<()> {
+fn create_lookup_table(conn: &Connection, table_name: &str, theme: &str) -> OvertureResult<()> {
         let lookup_table = lookup_table_name(table_name);
         validate_table_name(&lookup_table)?;
 
@@ -306,7 +306,7 @@ fn create_lookup_table(conn: &Connection, table_name: &str, theme: &str) -> Engi
         Ok(())
 }
 
-fn has_column(conn: &Connection, table_name: &str, column: &str) -> EngineResult<bool> {
+fn has_column(conn: &Connection, table_name: &str, column: &str) -> OvertureResult<bool> {
         let mut stmt = conn.prepare(
             "SELECT column_name FROM information_schema.columns \
              WHERE table_schema = 'main' AND table_name = ? \
@@ -323,7 +323,7 @@ fn has_column(conn: &Connection, table_name: &str, column: &str) -> EngineResult
         Ok(false)
 }
 
-fn ensure_extensions(conn: &Connection) -> EngineResult<()> {
+fn ensure_extensions(conn: &Connection) -> OvertureResult<()> {
     conn.execute("INSTALL spatial", [])?;
     conn.execute("LOAD spatial", [])?;
     conn.execute("INSTALL httpfs", [])?;
@@ -374,7 +374,7 @@ pub fn fetch_buildings_in_bbox(
     ymin: f64,
     xmax: f64,
     ymax: f64,
-) -> EngineResult<String> {
+) -> OvertureResult<String> {
     let conn = Connection::open(db_path)?;
     ensure_extensions(&conn)?;
 

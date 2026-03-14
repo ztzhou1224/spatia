@@ -9,7 +9,7 @@ use spatia_geocode::{
     GeocodeStats,
 };
 
-use crate::corpus::{ExpectedResult, LookupSetup, TestCase};
+use crate::geocode_bench::corpus::{ExpectedResult, LookupSetup, TestCase};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestResult {

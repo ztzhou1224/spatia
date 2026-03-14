@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::runner::TestResult;
+use crate::geocode_bench::runner::TestResult;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BenchReport {

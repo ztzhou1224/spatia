@@ -4797,10 +4797,14 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "csv",
+ "duckdb",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "spatia_ai",
  "spatia_engine",
+ "spatia_geocode",
  "tokio",
  "toml 0.8.2",
  "tracing",
@@ -4823,6 +4827,8 @@ dependencies = [
  "serde",
  "serde_json",
  "spatia_geocode",
+ "spatia_ingest",
+ "spatia_overture",
  "tokio",
  "tracing",
 ]
@@ -4844,21 +4850,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "spatia_geocode_bench"
+name = "spatia_ingest"
 version = "0.1.0"
 dependencies = [
- "chrono",
- "clap",
- "csv",
  "duckdb",
- "reqwest 0.12.28",
+ "tracing",
+]
+
+[[package]]
+name = "spatia_overture"
+version = "0.1.0"
+dependencies = [
+ "duckdb",
  "serde",
  "serde_json",
  "spatia_geocode",
- "tokio",
- "toml 0.8.2",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
