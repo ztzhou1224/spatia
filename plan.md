@@ -330,6 +330,294 @@ Goal: Make AI chat responses useful and informative.
 - [ ] TASK-P0-3: WebDriver E2E test infrastructure (community crate risk — using Layer 1 for now)
 
 ---
+---
+
+# Post-MVP: Insurance Vertical Sprint Plan
+
+**Date:** 2026-03-14
+**Context:** Following the market-fit-analysis, Spatia is pivoting from generic desktop GIS to **vertical spatial intelligence for insurance underwriting**. Core technology unchanged; positioning, data integrations, AI prompts, and workflow design now target property risk assessment for small-to-mid insurance carriers and MGAs.
+
+**Strategic rationale:** Insurance underwriting is the strongest vertical because (1) bad risk assessment costs insurers millions, (2) local-first becomes a compliance feature for sensitive policy data, (3) the existing CSV→geocode→analyze→map pipeline maps directly to underwriting workflows, and (4) incumbent tools (SpatialKey/Insurity) cost $100K+/year — Spatia can compete at 1/10th the price.
+
+---
+
+## Phase 1: Table Stakes (Pre-Launch Blockers)
+
+Goal: Ship the minimum capabilities required for any professional user to complete a workflow end-to-end. Without these, Spatia cannot be positioned as a production tool.
+
+### TASK-14: CSV export of any table (est: 3h, role: senior-engineer)
+- **Description**: Add a "Download CSV" button to each table card in the FileList panel. Users must be able to export any loaded table (raw, geocoded, or analysis_result) as a CSV file.
+- **Approach**: New Tauri command `export_table_csv` that runs `COPY <table> TO '<path>' (FORMAT CSV, HEADER)` via DuckDB. Frontend uses Tauri's save dialog (`dialog.save`) for file path selection.
+- **Acceptance criteria**:
+  - Each table card in FileList shows a download/export icon button
+  - Clicking opens a native save dialog defaulting to `<table_name>.csv`
+  - Exported CSV includes headers and all rows
+  - Works for regular tables, geocoded tables, and the `analysis_result` view
+- **Files**: `src-tauri/src/lib.rs` (new command), `src-tauri/crates/engine/src/export.rs` (new module), `src/components/FileList.tsx` (export button)
+- **Dependencies**: None
+
+### TASK-15: GeoJSON export of analysis_result (est: 2h, role: senior-engineer)
+- **Description**: Add "Export GeoJSON" button for the current analysis result. This enables users to share spatial outputs with other GIS tools.
+- **Approach**: New Tauri command `export_analysis_geojson` that serializes the current `analysis_result` view to GeoJSON FeatureCollection and saves via native dialog.
+- **Acceptance criteria**:
+  - Export button appears in ChatCard when analysis results exist
+  - Exports valid GeoJSON FeatureCollection with all properties
+  - File saved via native save dialog defaulting to `analysis_result.geojson`
+- **Files**: `src-tauri/src/lib.rs`, `src-tauri/crates/engine/src/export.rs`, `src/components/ChatCard.tsx`
+- **Dependencies**: TASK-14 (shared export module)
+
+### TASK-16: Map PNG export (est: 2h, role: senior-engineer)
+- **Description**: Add "Export Map" button to MapView toolbar that captures the current map viewport as a PNG image.
+- **Approach**: Use `map.getCanvas().toDataURL('image/png')` on the MapLibre instance, then pass the base64 data to a Tauri command that writes it to disk via save dialog.
+- **Acceptance criteria**:
+  - Export button visible in map toolbar/controls area
+  - Captures full viewport including all Deck.gl overlays and base map
+  - Saved as PNG via native save dialog
+  - Works with all basemap types and layer combinations
+- **Files**: `src/components/MapView.tsx`, `src-tauri/src/lib.rs` (save file command)
+- **Dependencies**: None
+
+### TASK-17: Settings UI — API key management (est: 4h, role: senior-engineer)
+- **Description**: Build a settings panel accessible from the app toolbar. Users must be able to enter, update, and verify API keys (Gemini, Geocodio) without touching environment variables. Keys stored via Tauri's secure storage plugin.
+- **Approach**: New `SettingsPanel` component (modal or slide-over). Use `tauri-plugin-store` or `tauri-plugin-stronghold` for secure key storage. New Tauri commands: `save_api_key`, `get_api_key`, `verify_api_key`. At startup, check secure storage before falling back to env vars.
+- **Acceptance criteria**:
+  - Settings gear icon in the app header/toolbar opens the settings panel
+  - Fields for Gemini API key and Geocodio API key (masked input)
+  - "Test" button that verifies each key responds (ping the API)
+  - Keys persisted across sessions via Tauri secure storage
+  - Env vars still work as fallback (backward compatible)
+  - PMTiles file picker (native file dialog) to select local tile files
+- **Files**: `src/components/SettingsPanel.tsx` (new), `src/App.tsx` (mount settings), `src-tauri/src/lib.rs` (key commands), `src-tauri/Cargo.toml` (secure storage plugin)
+- **Dependencies**: None
+
+### TASK-18: Map legend — auto-generated from active layer (est: 3h, role: senior-engineer)
+- **Description**: Add an auto-generated legend overlay to MapView that reflects the current active Deck.gl layer type, color encoding, and data source.
+- **Approach**: New `MapLegend` component rendered as a positioned overlay inside MapView. Reads `visualizationType`, layer color config, and data source name from appStore. Renders appropriate legend items: color gradient for heatmap, color stops for hexbin, single color for scatter.
+- **Acceptance criteria**:
+  - Legend appears when any Deck.gl overlay is active
+  - Shows layer type name, color scale, and data source table name
+  - For quantitative scales (heatmap, hexbin): shows min/max range
+  - For scatter: shows point color and label
+  - Legend hides when no overlay is active
+  - Positioned bottom-left or top-right, non-overlapping with other controls
+- **Files**: `src/components/MapLegend.tsx` (new), `src/components/MapView.tsx` (mount legend), `src/lib/appStore.ts` (legend state if needed)
+- **Dependencies**: None
+
+### TASK-19: Basemap selector (est: 2h, role: senior-engineer)
+- **Description**: Add a basemap selector control to the map. Minimum options: CartoDB Dark Matter, CartoDB Positron (light), and OpenStreetMap.
+- **Approach**: New `BasemapSelector` component (small floating button group or dropdown) in MapView. On selection, update the MapLibre style URL. Store selection in appStore for persistence.
+- **Acceptance criteria**:
+  - Basemap selector visible on the map (floating control)
+  - Three options minimum: Dark, Light, OpenStreetMap
+  - Switching basemaps preserves current viewport (center, zoom)
+  - Preserves all Deck.gl overlays and data layers
+  - Selection persists across sessions (localStorage or appStore)
+- **Files**: `src/components/BasemapSelector.tsx` (new), `src/components/MapView.tsx` (mount selector), `src/lib/appStore.ts` (basemap state)
+- **Dependencies**: None
+- **Note**: Already listed in architecture.md as implemented basemaps — verify current state before starting. If partially done, extend rather than rebuild.
+
+### TASK-20: Truncation indicators on map and table (est: 2h, role: senior-engineer)
+- **Description**: When results are capped (1,000 GeoJSON features, 20 table rows), show an explicit "Showing X of Y" badge. Silent truncation destroys analytical trust.
+- **Approach**: Extend analysis SQL execution to return total row count alongside truncated results (run `SELECT COUNT(*) FROM analysis_result` before truncation). Display badge on map overlay and in ResultTable header.
+- **Acceptance criteria**:
+  - Map shows "Showing X of Y features" badge when GeoJSON is truncated
+  - ResultTable shows "Showing X of Y rows" in header when rows are truncated
+  - Badge only appears when truncation actually occurs
+  - Total count is accurate (from COUNT(*) query)
+- **Files**: `src-tauri/src/lib.rs` (return total count), `src/components/MapView.tsx` (badge), `src/components/ChatCard.tsx` (table badge)
+- **Dependencies**: None
+
+### TASK-21: Tooltip labels on all UI controls (est: 2h, role: senior-engineer)
+- **Description**: Add descriptive tooltip labels to all icon-only buttons across the UI. Currently, many controls are unlabeled icons that are not discoverable.
+- **Approach**: Audit all icon buttons in MapView, FileList, ChatCard, and any other components. Add Radix UI `Tooltip` wrappers with descriptive labels.
+- **Acceptance criteria**:
+  - Every icon-only button has a hover tooltip describing its function
+  - Tooltips use consistent styling (Radix UI Tooltip component)
+  - Labels are concise and action-oriented (e.g., "Export CSV", "New Chat", "Toggle Layer")
+- **Files**: `src/components/MapView.tsx`, `src/components/FileList.tsx`, `src/components/ChatCard.tsx`
+- **Dependencies**: None
+
+---
+
+## Phase 2: Competitive Parity
+
+Goal: Bring Spatia to a level where direct comparison against Felt, Kepler.gl, and lighter ArcGIS/Carto use cases is favorable.
+
+### TASK-22: GeoJSON and Shapefile import (est: 4h, role: senior-engineer)
+- **Description**: Extend the ingest pipeline to accept `.geojson` and `.shp` files in addition to CSV. Without polygon data, spatial joins and geographic aggregations are impossible.
+- **Approach**: DuckDB spatial extension supports `ST_Read()` for GeoJSON and Shapefile (via GDAL bindings). Extend `ingest_csv_with_progress` to detect file extension and route to appropriate DuckDB load command. Geometry columns stored as DuckDB GEOMETRY type.
+- **Acceptance criteria**:
+  - FileList upload accepts `.geojson`, `.json`, and `.shp` files (plus `.dbf`/`.shx`/`.prj` sidecar files for Shapefile)
+  - Ingested spatial files appear as tables with geometry columns
+  - Polygons/lines render on map (not just points)
+  - AI analysis can reference geometry columns in SQL
+- **Files**: `src-tauri/crates/engine/src/ingest.rs` (extend), `src-tauri/src/lib.rs` (update command), `src/components/FileList.tsx` (accept new file types), `src/components/MapView.tsx` (polygon/line rendering)
+- **Dependencies**: None
+
+### TASK-23: Column sort and filter in table preview (est: 3h, role: senior-engineer)
+- **Description**: Add column-level sorting (click header to toggle asc/desc) and a row count indicator to the table preview. Phase 2 addition: basic column filter (text search per column).
+- **Approach**: Extend the `table_preview` Tauri command to accept optional `order_by` and `filter` parameters. Frontend adds clickable headers and filter input per column.
+- **Acceptance criteria**:
+  - Clicking a column header sorts by that column (toggle asc → desc → none)
+  - Sort state indicated by arrow icon in header
+  - Row count indicator shows total rows in table
+  - Optional: text filter input per column (WHERE col LIKE '%query%')
+- **Files**: `src-tauri/src/lib.rs` (extend preview command), `src/components/FileList.tsx` (sortable headers, filter UI)
+- **Dependencies**: None
+
+### TASK-24: Editable SQL panel in chat (est: 3h, role: senior-engineer)
+- **Description**: Show the AI-generated SQL in a collapsible panel within each chat response. Allow users to edit and re-execute the SQL. This provides transparency and a power-user escape hatch when AI gets it wrong.
+- **Approach**: ChatCard already shows some SQL info. Extend to show full SQL in a collapsible `<pre>` block with an "Edit & Run" button. Edited SQL goes through the existing safety validator before execution.
+- **Acceptance criteria**:
+  - Each AI response that generated SQL shows a collapsible "View SQL" section
+  - SQL is displayed in a monospace, syntax-highlighted text area
+  - "Edit" button makes the SQL editable; "Run" button re-executes
+  - Edited SQL still passes through the analysis SQL safety validator
+  - Results update in the chat message and on the map
+- **Files**: `src/components/ChatCard.tsx`, `src/components/SqlEditor.tsx` (new, lightweight)
+- **Dependencies**: None
+
+### TASK-25: Example query suggestions in empty chat (est: 2h, role: senior-engineer)
+- **Description**: When no conversation is in progress, show clickable example query chips in the ChatCard. Reduces first-use friction by showing users what kinds of questions they can ask.
+- **Approach**: Display 4-6 example queries as clickable chips/buttons above the chat input. Clicking one populates the input and submits. Examples should be contextual — if tables are loaded, reference actual column names; if not, show generic examples.
+- **Acceptance criteria**:
+  - Example chips visible when chat is empty (no messages)
+  - Chips disappear after first message is sent
+  - At least 4 example queries covering different analysis types (spatial, aggregation, filtering, visualization)
+  - If tables are loaded, examples reference actual table/column names
+  - Clicking a chip submits the query
+- **Files**: `src/components/ChatCard.tsx`, `src/lib/appStore.ts` (table schema for contextual examples)
+- **Dependencies**: None
+
+### TASK-26: Increased result limits with pagination (est: 3h, role: senior-engineer)
+- **Description**: Increase GeoJSON feature limit to 5,000 and table row limit to 100. Add pagination to the ResultTable for navigating large result sets.
+- **Approach**: Update constants in analysis execution. Add OFFSET/LIMIT pagination to the table result query. Frontend adds page navigation controls to ResultTable.
+- **Acceptance criteria**:
+  - Map renders up to 5,000 GeoJSON features (verify Deck.gl performance)
+  - ResultTable shows up to 100 rows per page with next/prev controls
+  - Page indicator shows "Page X of Y"
+  - Truncation badge (TASK-20) still works with new limits
+- **Files**: `src-tauri/crates/engine/src/analysis.rs` (update limits), `src-tauri/src/lib.rs`, `src/components/ChatCard.tsx` (pagination controls)
+- **Dependencies**: TASK-20
+
+---
+
+## Phase 3: Insurance Vertical Features (Differentiation)
+
+Goal: Build insurance-specific capabilities that transform Spatia from a generic spatial tool into a purpose-built insurance underwriting intelligence platform. This is the monetization differentiator.
+
+### TASK-27: FEMA flood zone data integration (est: 4h, role: senior-engineer)
+- **Description**: Enable loading and querying FEMA National Flood Hazard Layer (NFHL) data. This is the most critical risk overlay for property insurance underwriting.
+- **Approach**: FEMA NFHL is available as Shapefile/GeoJSON from FEMA's Map Service Center. Build a Tauri command `load_fema_flood` that downloads or imports FEMA flood zone polygons for a given bounding box into DuckDB via `ST_Read`. Store as a persistent table (`fema_flood_zones`) that the AI can reference in spatial joins.
+- **Acceptance criteria**:
+  - New command or UI flow to load FEMA flood data for a geographic area
+  - Flood zones rendered as semi-transparent polygon overlay on map
+  - AI can answer queries like "What percentage of properties are in Zone AE?"
+  - Flood zone data persists in DuckDB for reuse
+  - Point-in-polygon spatial join works between property table and flood zones
+- **Files**: `src-tauri/crates/engine/src/risk_data.rs` (new module), `src-tauri/src/lib.rs`, `src/components/MapView.tsx` (polygon overlay)
+- **Dependencies**: TASK-22 (GeoJSON/Shapefile import infrastructure)
+
+### TASK-28: USGS wildfire risk overlay (est: 3h, role: senior-engineer)
+- **Description**: Integrate USGS Wildfire Hazard Potential (WHP) data as a risk overlay. WHP provides rasterized wildfire risk scores across the US.
+- **Approach**: USGS WHP is available as GeoTIFF raster. Since DuckDB doesn't handle rasters natively, pre-process to vector polygons (risk zones) or use point-sampling. Alternative: use the USGS WHP web service for point-based risk lookups. Store results in DuckDB.
+- **Acceptance criteria**:
+  - Properties can be scored for wildfire risk (high/moderate/low)
+  - Risk scores stored as a column in the property table or as a joined view
+  - AI can answer "Which properties have high wildfire risk?"
+  - Visual indication on map (color-coded risk)
+- **Files**: `src-tauri/crates/engine/src/risk_data.rs`, `src-tauri/src/lib.rs`
+- **Dependencies**: TASK-27 (shared risk data infrastructure)
+
+### TASK-29: Insurance-specific AI system prompts (est: 3h, role: senior-engineer)
+- **Description**: Replace or augment the generic analysis prompts with insurance-specific system prompts. The AI should understand property insurance terminology, common underwriting questions, risk assessment concepts, and available risk data tables.
+- **Approach**: Create insurance-specific prompt templates in `spatia_ai` that inject: (1) insurance domain context (exposure, loss ratio, aggregation, zone classification), (2) available risk data tables (FEMA flood, wildfire), (3) common underwriting query patterns. Use prompt selection based on whether risk data tables are loaded.
+- **Acceptance criteria**:
+  - When risk data tables exist, AI uses insurance-specific system prompt
+  - AI correctly uses insurance terminology in responses
+  - AI generates spatial joins between property data and risk overlays without explicit instruction
+  - Example queries work: "What's my portfolio exposure in flood Zone AE?", "Flag properties with combined flood and wildfire risk", "Show risk concentration by zip code"
+- **Files**: `src-tauri/crates/ai/src/prompts.rs` (new insurance prompts), `src-tauri/crates/ai/src/client.rs` (prompt selection logic)
+- **Dependencies**: TASK-27, TASK-28
+
+### TASK-30: Guided risk assessment workflow (est: 5h, role: senior-engineer + ui-design-architect)
+- **Description**: Build a step-by-step workflow for the insurance use case: Import Portfolio → Geocode → Load Risk Data → Risk Score → Review → Export Report. This replaces the generic "upload and chat" flow with a task-oriented experience for underwriters.
+- **Approach**: New `RiskWorkflow` component that guides users through sequential steps with progress indicators. Each step maps to existing Tauri commands. The workflow is an alternative entry point — the generic chat interface remains available.
+- **Acceptance criteria**:
+  - Workflow accessible from a prominent UI entry point (toolbar button or welcome screen)
+  - Step 1: Import property portfolio (CSV upload)
+  - Step 2: Review geocoding results (show confidence, flag low matches)
+  - Step 3: Select risk overlays to load (FEMA flood, wildfire)
+  - Step 4: View risk assessment summary (property count by risk zone)
+  - Step 5: Export results (CSV with risk scores, map PNG)
+  - Each step has clear instructions and progress feedback
+  - Users can skip steps or return to previous steps
+- **Files**: `src/components/RiskWorkflow.tsx` (new), `src/App.tsx` (mount workflow), `src/lib/appStore.ts` (workflow state)
+- **Dependencies**: TASK-27, TASK-28, TASK-14, TASK-16
+
+### TASK-31: PDF risk assessment report generation (est: 4h, role: senior-engineer)
+- **Description**: Generate a PDF report summarizing the risk assessment results. This is the key deliverable for underwriting workflows — a shareable document that can go into policy files.
+- **Approach**: Use a Rust PDF generation library (e.g., `printpdf` or `genpdf`) to create a report containing: map screenshot (from TASK-16), risk summary table, property listing with risk scores, and methodology notes. Triggered from the Risk Workflow or via a "Generate Report" button.
+- **Acceptance criteria**:
+  - PDF includes: title page, map viewport capture, risk summary statistics, property table with risk scores
+  - Generated via native save dialog
+  - Professional appearance suitable for inclusion in underwriting files
+  - Report data pulled from current analysis state (not re-queried)
+- **Files**: `src-tauri/crates/engine/src/report.rs` (new module), `src-tauri/Cargo.toml` (PDF crate), `src-tauri/src/lib.rs` (report command)
+- **Dependencies**: TASK-16, TASK-27, TASK-28, TASK-30
+
+### TASK-32: Multi-layer map with user-controlled visibility (est: 4h, role: senior-engineer)
+- **Description**: Allow users to toggle visibility of individual map layers (base data, flood zones, wildfire risk, analysis results). Essential for insurance workflows where multiple risk overlays must be compared.
+- **Approach**: New `LayerPanel` component listing all active layers with visibility toggles and opacity sliders. Each data source (table points, flood polygons, wildfire zones, analysis overlay) is a separate controllable layer.
+- **Acceptance criteria**:
+  - Layer panel accessible from map controls (toggle button)
+  - Each loaded data source appears as a layer entry
+  - Visibility toggle (eye icon) shows/hides the layer
+  - Opacity slider per layer
+  - Layer ordering (drag to reorder) — stretch goal
+  - Panel collapses to not obstruct map view
+- **Files**: `src/components/LayerPanel.tsx` (new), `src/components/MapView.tsx` (layer management), `src/lib/appStore.ts` (layer visibility state)
+- **Dependencies**: TASK-22, TASK-27
+
+---
+
+## Sprint Status
+
+### MVP Sprint (COMPLETED)
+
+- [x] TASK-P0-1 through TASK-13: All completed (see above)
+
+### Post-MVP Sprint (ACTIVE)
+
+**Phase 1 — Table Stakes (Pre-Launch Blockers):**
+- [ ] TASK-14: CSV export of any table
+- [ ] TASK-15: GeoJSON export of analysis_result
+- [ ] TASK-16: Map PNG export
+- [ ] TASK-17: Settings UI — API key management
+- [ ] TASK-18: Map legend — auto-generated
+- [ ] TASK-19: Basemap selector
+- [ ] TASK-20: Truncation indicators
+- [ ] TASK-21: Tooltip labels on all controls
+
+**Phase 2 — Competitive Parity:**
+- [ ] TASK-22: GeoJSON/Shapefile import
+- [ ] TASK-23: Column sort/filter in table preview
+- [ ] TASK-24: Editable SQL panel in chat
+- [ ] TASK-25: Example query suggestions
+- [ ] TASK-26: Increased result limits with pagination
+
+**Phase 3 — Insurance Vertical (Differentiation):**
+- [ ] TASK-27: FEMA flood zone data integration
+- [ ] TASK-28: USGS wildfire risk overlay
+- [ ] TASK-29: Insurance-specific AI prompts
+- [ ] TASK-30: Guided risk assessment workflow
+- [ ] TASK-31: PDF risk assessment report
+- [ ] TASK-32: Multi-layer map with visibility controls
+
+**DEFERRED:**
+- [ ] TASK-P0-3: WebDriver E2E test infrastructure
+
+---
 
 ## Quality Gate (required before every merge)
 
@@ -338,22 +626,13 @@ pnpm build
 cd src-tauri && cargo test --workspace && cargo clippy --workspace
 ```
 
-## Agent Testing Capabilities
-
-| Agent | Can Do | Tools |
-|-------|--------|-------|
-| test-engineer | Write and run E2E tests, assert on UI state, take screenshots | WebDriverIO, `debug_ui_snapshot`, `capture-app.sh` |
-| product-manager | Visually verify features, read UI state, acceptance testing | `capture-app.sh` (Read PNG), `dump-ui-state.sh` (Read JSON) |
-| ui-design-architect | Verify layout/styling, check component rendering | `capture-app.sh` (Read PNG), `dump-ui-state.sh` |
-| senior-engineer | Run full test suite, debug failures, add E2E tests | All tools |
-
-## Team Assignments
+## Team Assignments (Post-MVP)
 
 | Agent | Role | Primary Tasks |
 |-------|------|---------------|
-| senior-engineer | Full-stack implementation | TASK-P0-1/2/3, TASK-01 through TASK-10, TASK-13 |
-| test-engineer | Test coverage + E2E testing | TASK-11, ongoing E2E test writing after P0 |
-| ui-design-architect | UX design + visual verification | TASK-12 |
-| gis-domain-expert | Consult on geocoding, CRS, spatial queries | Advisory on TASK-02, TASK-10 |
-| product-manager | Prioritization, acceptance, visual verification | Review all task completions |
-| gis-tech-lead | Architecture, code review, coordination | TASK-P0-4, all tasks (review) |
+| senior-engineer | Full-stack implementation | TASK-14 through TASK-32 (all implementation) |
+| test-engineer | Test coverage + acceptance | Tests for each completed task, E2E validation |
+| ui-design-architect | UX design | TASK-17 (Settings), TASK-18 (Legend), TASK-30 (Risk Workflow) |
+| gis-domain-expert | Domain validation | TASK-27 (FEMA data), TASK-28 (wildfire), TASK-29 (prompts) |
+| product-manager | Prioritization + acceptance | Review all deliverables, verify market-fit alignment |
+| gis-tech-lead | Architecture + coordination | All tasks (review), dependency management |
