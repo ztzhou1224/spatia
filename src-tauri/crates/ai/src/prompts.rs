@@ -710,4 +710,137 @@ mod tests {
             "single-table prompt should block H3 functions"
         );
     }
+
+    // --- Column quoting tests ---
+
+    #[test]
+    fn clean_prompt_schema_columns_are_double_quoted() {
+        let prompt = build_clean_prompt("raw_staging", &sample_schema(), "");
+        // Schema section must render column names wrapped in double quotes.
+        assert!(
+            prompt.contains("\"id\""),
+            "clean prompt schema must double-quote the 'id' column"
+        );
+        assert!(
+            prompt.contains("\"city\""),
+            "clean prompt schema must double-quote the 'city' column"
+        );
+    }
+
+    #[test]
+    fn clean_prompt_includes_double_quote_instruction() {
+        let prompt = build_clean_prompt("raw_staging", &sample_schema(), "");
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "clean prompt must instruct the model to double-quote column identifiers"
+        );
+    }
+
+    #[test]
+    fn clean_prompt_recipe_uses_quoted_col_placeholder() {
+        // The title-case recipe must show "col" in double quotes so the AI
+        // learns the expected quoting convention from the example.
+        let prompt = build_clean_prompt("raw_staging", &sample_schema(), "");
+        assert!(
+            prompt.contains("\"col\""),
+            "clean prompt recipe must use quoted column placeholder (\"col\")"
+        );
+    }
+
+    #[test]
+    fn clean_retry_prompt_includes_double_quote_instruction() {
+        let prompt = build_clean_retry_prompt(
+            "UPDATE t SET city = TRIM(city)",
+            "some error",
+        );
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "clean retry prompt must instruct the model to double-quote column identifiers"
+        );
+    }
+
+    #[test]
+    fn analysis_sql_prompt_schema_columns_are_double_quoted() {
+        let prompt =
+            build_analysis_sql_prompt("places", &sample_schema(), "count by city");
+        assert!(
+            prompt.contains("\"id\""),
+            "analysis SQL prompt schema must double-quote the 'id' column"
+        );
+        assert!(
+            prompt.contains("\"city\""),
+            "analysis SQL prompt schema must double-quote the 'city' column"
+        );
+    }
+
+    #[test]
+    fn analysis_sql_prompt_includes_double_quote_instruction() {
+        let prompt =
+            build_analysis_sql_prompt("places", &sample_schema(), "count by city");
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "analysis SQL prompt must instruct the model to double-quote column identifiers"
+        );
+    }
+
+    #[test]
+    fn analysis_chat_system_prompt_schema_columns_are_double_quoted() {
+        let prompt = build_analysis_chat_system_prompt("places", &sample_schema());
+        assert!(
+            prompt.contains("\"id\""),
+            "analysis chat system prompt schema must double-quote the 'id' column"
+        );
+        assert!(
+            prompt.contains("\"city\""),
+            "analysis chat system prompt schema must double-quote the 'city' column"
+        );
+    }
+
+    #[test]
+    fn analysis_chat_system_prompt_includes_double_quote_instruction() {
+        let prompt = build_analysis_chat_system_prompt("places", &sample_schema());
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "analysis chat system prompt must instruct the model to double-quote column identifiers"
+        );
+    }
+
+    #[test]
+    fn analysis_retry_prompt_includes_double_quote_instruction() {
+        let schemas = vec![("places".to_string(), sample_schema())];
+        let prompt = build_analysis_retry_prompt(
+            "show all cities",
+            &schemas,
+            "CREATE OR REPLACE VIEW analysis_result AS SELECT city FROM places",
+            "some error",
+        );
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "analysis retry prompt must instruct the model to double-quote column identifiers"
+        );
+    }
+
+    #[test]
+    fn unified_chat_prompt_schema_columns_are_double_quoted() {
+        let schemas = vec![("locations".to_string(), sample_schema())];
+        let prompt = super::build_unified_chat_prompt(&schemas, "show cities", &[]);
+        assert!(
+            prompt.contains("\"id\""),
+            "unified chat prompt schema must double-quote the 'id' column"
+        );
+        assert!(
+            prompt.contains("\"city\""),
+            "unified chat prompt schema must double-quote the 'city' column"
+        );
+    }
+
+    #[test]
+    fn unified_chat_prompt_includes_double_quote_instruction() {
+        let schemas = vec![("locations".to_string(), sample_schema())];
+        let prompt = super::build_unified_chat_prompt(&schemas, "show cities", &[]);
+        assert!(
+            prompt.contains("double-quote") || prompt.contains("double quote"),
+            "unified chat prompt must instruct the model to double-quote column identifiers"
+        );
+    }
 }
