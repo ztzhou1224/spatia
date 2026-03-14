@@ -475,6 +475,71 @@ pub fn fuzzy_overture_match(
     Ok(best.map(|(r, _)| r))
 }
 
+/// Batch reverse lookup: given a list of (lat, lon, postcode) tuples, find the
+/// nearest Overture address record for each to attach GERS IDs.
+/// Returns a Vec of Option<String> in the same order as the input.
+pub fn batch_reverse_lookup_gers(
+    conn: &Connection,
+    coords: &[(f64, f64, Option<&str>)],
+) -> GeoResult<Vec<Option<String>>> {
+    if coords.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // For each coordinate, run a small query. This is still per-item but
+    // we prepare the statement once and reuse it for the common case (no postcode filter).
+    let mut results = Vec::with_capacity(coords.len());
+
+    // Most addresses won't have a postcode filter, so prepare two statements
+    let sql_no_pc = "SELECT gers_id FROM overture_addr_cache \
+                     WHERE lat IS NOT NULL AND lon IS NOT NULL \
+                     ORDER BY pow(lat - ?, 2) + pow(lon - ?, 2) \
+                     LIMIT 1";
+    let mut stmt_no_pc = conn.prepare(sql_no_pc)?;
+
+    for (lat, lon, postcode) in coords {
+        let gers_id = if let Some(pc) = postcode {
+            if !pc.is_empty() {
+                // Use postcode-filtered query for better accuracy
+                let sql_pc = format!(
+                    "SELECT gers_id FROM overture_addr_cache \
+                     WHERE lat IS NOT NULL AND lon IS NOT NULL \
+                       AND postcode = '{}' \
+                     ORDER BY pow(lat - {}, 2) + pow(lon - {}, 2) \
+                     LIMIT 1",
+                    pc.replace('\'', "''"),
+                    lat,
+                    lon,
+                );
+                let mut stmt = conn.prepare(&sql_pc)?;
+                let mut rows = stmt.query([])?;
+                if let Some(row) = rows.next()? {
+                    Some(row.get::<_, String>(0)?)
+                } else {
+                    None
+                }
+            } else {
+                let mut rows = stmt_no_pc.query(duckdb::params![lat, lon])?;
+                if let Some(row) = rows.next()? {
+                    Some(row.get::<_, String>(0)?)
+                } else {
+                    None
+                }
+            }
+        } else {
+            let mut rows = stmt_no_pc.query(duckdb::params![lat, lon])?;
+            if let Some(row) = rows.next()? {
+                Some(row.get::<_, String>(0)?)
+            } else {
+                None
+            }
+        };
+        results.push(gers_id);
+    }
+
+    Ok(results)
+}
+
 /// Reverse lookup: given coordinates (from Geocodio), find the nearest Overture
 /// address record to attach a GERS ID.
 pub fn reverse_lookup_gers(

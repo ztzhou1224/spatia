@@ -1,4 +1,4 @@
-use duckdb::{params, Connection};
+use duckdb::Connection;
 
 use crate::types::{GeoResult, GeocodeResult};
 
@@ -17,51 +17,92 @@ pub fn ensure_cache_table(conn: &Connection) -> GeoResult<()> {
 }
 
 /// Split `addresses` into (cached_results, uncached_addresses).
+///
+/// Uses a single `WHERE address IN (...)` query instead of one query per
+/// address, reducing DuckDB round-trips from N to 1.
 pub fn cache_lookup(
     conn: &Connection,
     addresses: &[String],
 ) -> GeoResult<(Vec<GeocodeResult>, Vec<String>)> {
     ensure_cache_table(conn)?;
 
-    let mut hits = Vec::new();
-    let mut misses = Vec::new();
+    if addresses.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
 
-    for address in addresses {
-        let result: duckdb::Result<GeocodeResult> = conn.query_row(
-            "SELECT address, lat, lon, source FROM geocode_cache WHERE address = ?",
-            params![address],
-            |row| {
-                Ok(GeocodeResult {
-                    address: row.get(0)?,
-                    lat: row.get(1)?,
-                    lon: row.get(2)?,
-                    source: row.get(3)?,
-                })
-            },
+    // Build a single IN-list query for all addresses at once.
+    // For very large batches we chunk to avoid SQL statement size limits,
+    // but for typical geocoding batches (≤10k) a single query is fine.
+    const CHUNK_SIZE: usize = 500;
+    let mut hit_map: std::collections::HashMap<String, GeocodeResult> =
+        std::collections::HashMap::with_capacity(addresses.len());
+
+    for chunk in addresses.chunks(CHUNK_SIZE) {
+        let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let sql = format!(
+            "SELECT address, lat, lon, source FROM geocode_cache WHERE address IN ({placeholders})"
         );
-        match result {
-            Ok(r) => hits.push(r),
-            Err(_) => misses.push(address.clone()),
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn duckdb::ToSql> =
+            chunk.iter().map(|a| a as &dyn duckdb::ToSql).collect();
+        let mut rows = stmt.query(params.as_slice())?;
+        while let Some(row) = rows.next()? {
+            let result = GeocodeResult {
+                address: row.get(0)?,
+                lat: row.get(1)?,
+                lon: row.get(2)?,
+                source: row.get(3)?,
+            };
+            hit_map.insert(result.address.clone(), result);
+        }
+    }
+
+    let mut hits = Vec::with_capacity(hit_map.len());
+    let mut misses = Vec::with_capacity(addresses.len() - hit_map.len());
+    for address in addresses {
+        if let Some(result) = hit_map.remove(address) {
+            hits.push(result);
+        } else {
+            misses.push(address.clone());
         }
     }
 
     Ok((hits, misses))
 }
 
-/// Upsert resolved geocode results into `geocode_cache` using `INSERT OR REPLACE`.
+/// Upsert resolved geocode results into `geocode_cache` using a single
+/// multi-row `INSERT OR REPLACE` statement per chunk.
 pub fn cache_store(
     conn: &Connection,
     results: &[GeocodeResult],
     source: &str,
 ) -> GeoResult<()> {
+    if results.is_empty() {
+        return Ok(());
+    }
     ensure_cache_table(conn)?;
 
-    for result in results {
-        conn.execute(
-            "INSERT OR REPLACE INTO geocode_cache (address, lat, lon, source, cached_at) \
-             VALUES (?, ?, ?, ?, current_timestamp)",
-            params![result.address, result.lat, result.lon, source],
-        )?;
+    // DuckDB handles multi-row VALUES efficiently; chunk to stay within
+    // reasonable parameter counts (4 params per row × 250 = 1000 params).
+    const CHUNK_SIZE: usize = 250;
+    for chunk in results.chunks(CHUNK_SIZE) {
+        let row_placeholders: Vec<String> = chunk
+            .iter()
+            .map(|_| "(?, ?, ?, ?, current_timestamp)".to_string())
+            .collect();
+        let sql = format!(
+            "INSERT OR REPLACE INTO geocode_cache (address, lat, lon, source, cached_at) VALUES {}",
+            row_placeholders.join(", ")
+        );
+        let mut params_vec: Vec<Box<dyn duckdb::ToSql>> = Vec::with_capacity(chunk.len() * 4);
+        for result in chunk {
+            params_vec.push(Box::new(result.address.clone()));
+            params_vec.push(Box::new(result.lat));
+            params_vec.push(Box::new(result.lon));
+            params_vec.push(Box::new(source.to_string()));
+        }
+        let params_refs: Vec<&dyn duckdb::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        conn.execute(&sql, params_refs.as_slice())?;
     }
 
     Ok(())
