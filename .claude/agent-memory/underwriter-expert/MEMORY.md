@@ -17,6 +17,11 @@
 - Standards: ACORD forms, ISO construction/protection classes, COPE framework, NFIP flood zones
 - Publications: Best's Review, Insurance Journal, Risk & Insurance Magazine
 
+## Test Dataset
+- File: `/home/user/spatia/data/commercial_property_portfolio.csv`
+- 75 rows, 33 columns; realistic commercial property SOV
+- See `test-dataset-notes.md` for full field inventory and embedded edge cases
+
 ## Features Validated
 (none yet — will be populated as features go through the pipeline)
 
