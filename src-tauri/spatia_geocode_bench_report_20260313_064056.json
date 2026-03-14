@@ -1,0 +1,294 @@
+{
+  "run_at": "2026-03-13T06:40:56.697840Z",
+  "corpus_path": "tests/corpus/geocode_benchmark.toml",
+  "summary": {
+    "total": 8,
+    "passed": 7,
+    "failed": 1,
+    "pass_rate_pct": 87.5,
+    "avg_total_ms": 148.875,
+    "avg_geocode_ms": 112.625,
+    "avg_setup_ms": 35.875,
+    "p50_total_ms": 149,
+    "p95_total_ms": 168,
+    "avg_distance_error_m": 0.015595820328602003
+  },
+  "by_category": {
+    "pass": 7,
+    "geocode_error": 1
+  },
+  "source_distribution": {
+    "cache": 1,
+    "local_fuzzy": 7,
+    "api": 0,
+    "unresolved": 0
+  },
+  "results": [
+    {
+      "name": "local_fuzzy_exact_match",
+      "description": "Exact label match via local fuzzy lookup",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 168,
+        "setup_ms": 47,
+        "geocode_ms": 121
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "123 Main Street Springfield IL",
+          "lat": 39.7817,
+          "lon": -89.6501,
+          "source": "overture_fuzzy",
+          "confidence": 0.9,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_abbreviation",
+      "description": "Abbreviation expansion: St->Street, Ave->Avenue",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 156,
+        "setup_ms": 33,
+        "geocode_ms": 123
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "456 Oak Ave Chicago",
+          "lat": 41.8781,
+          "lon": -87.6298,
+          "source": "overture_fuzzy",
+          "confidence": 0.9,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_directional_abbrev",
+      "description": "Directional abbreviation: N->North",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 143,
+        "setup_ms": 32,
+        "geocode_ms": 111
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "100 N Main Street Denver",
+          "lat": 39.7392,
+          "lon": -104.9903,
+          "source": "overture_fuzzy",
+          "confidence": 0.9,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_blvd_expansion",
+      "description": "Boulevard abbreviation expansion",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 144,
+        "setup_ms": 32,
+        "geocode_ms": 111
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "789 Elm Blvd Seattle",
+          "lat": 47.6062,
+          "lon": -122.3321,
+          "source": "overture_fuzzy",
+          "confidence": 0.9,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_with_state_noise",
+      "description": "State abbreviation correctly treated as noise in scoring",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 144,
+        "setup_ms": 31,
+        "geocode_ms": 112
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "85 Pike Street Seattle WA 98101",
+          "lat": 47.6088,
+          "lon": -122.3404,
+          "source": "overture_fuzzy",
+          "confidence": 0.99,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_multiple_candidates",
+      "description": "Best match selected from multiple candidates",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 149,
+        "setup_ms": 38,
+        "geocode_ms": 110
+      },
+      "stats": {
+        "total": 1,
+        "geocoded": 1,
+        "cache_hits": 0,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "123 Main Street Springfield IL 62704",
+          "lat": 39.7817,
+          "lon": -89.6501,
+          "source": "overture_fuzzy",
+          "confidence": 0.99,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    },
+    {
+      "name": "local_fuzzy_low_confidence_rejected",
+      "description": "Wrong city query produces low confidence, should not be accepted",
+      "tags": [
+        "local_fuzzy"
+      ],
+      "outcome": "geocode_error",
+      "outcome_detail": "geocode_batch: SPATIA_GEOCODIO_API_KEY environment variable not set",
+      "timing": {
+        "total_ms": 131,
+        "setup_ms": 32,
+        "geocode_ms": 99
+      },
+      "stats": null,
+      "address_results": []
+    },
+    {
+      "name": "batch_cache_and_fuzzy_mixed",
+      "description": "Batch combining cache hit and local fuzzy match",
+      "tags": [
+        "batch",
+        "local_fuzzy",
+        "cache"
+      ],
+      "outcome": "pass",
+      "outcome_detail": null,
+      "timing": {
+        "total_ms": 156,
+        "setup_ms": 42,
+        "geocode_ms": 114
+      },
+      "stats": {
+        "total": 2,
+        "geocoded": 2,
+        "cache_hits": 1,
+        "local_fuzzy": 1,
+        "api_resolved": 0,
+        "unresolved": 0
+      },
+      "address_results": [
+        {
+          "address": "85 Pike St, Seattle, WA 98101",
+          "lat": 47.60879898071289,
+          "lon": -122.34040069580078,
+          "source": "geocodio",
+          "confidence": 0.85,
+          "distance_error_m": 0.12476656262881602,
+          "assertion_pass": true,
+          "assertion_detail": null
+        },
+        {
+          "address": "Space Needle Seattle WA",
+          "lat": 47.6205,
+          "lon": -122.3493,
+          "source": "overture_fuzzy",
+          "confidence": 0.85,
+          "distance_error_m": 0.0,
+          "assertion_pass": true,
+          "assertion_detail": null
+        }
+      ]
+    }
+  ]
+}

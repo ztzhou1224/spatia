@@ -55,6 +55,41 @@ export type ApiConfig = {
   geocodio: boolean;
 };
 
+export type DomainPackConfig = {
+  id: string;
+  display_name: string;
+  assistant_name: string;
+  ui_config: {
+    placeholder_no_data: string;
+    placeholder_no_selection: string;
+    placeholder_ready: string;
+    empty_state_title: string;
+    empty_state_description: string;
+    upload_instruction: string;
+    primary_color: string;
+    map_default_center: [number, number];
+    map_default_zoom: number;
+  };
+};
+
+const DEFAULT_DOMAIN_CONFIG: DomainPackConfig = {
+  id: "generic",
+  display_name: "Generic GIS",
+  assistant_name: "Spatia",
+  ui_config: {
+    placeholder_no_data: "Upload data to get started...",
+    placeholder_no_selection: "Select tables to add context...",
+    placeholder_ready: "Ask about your data...",
+    empty_state_title: "No data yet",
+    empty_state_description: "Spatia analyzes your location data with AI",
+    upload_instruction:
+      "Upload a CSV with addresses to get started. Spatia will clean the data, geocode the locations, and plot them on the map.",
+    primary_color: "#7c3aed",
+    map_default_center: [-122.4194, 37.7749],
+    map_default_zoom: 11,
+  },
+};
+
 type AppStore = {
   tables: TableInfo[];
   chatMessages: ChatMessage[];
@@ -67,6 +102,7 @@ type AppStore = {
   selectedTablesForChat: Set<string>;
   logPath: string | null;
   activeWidget: ActiveWidget | null;
+  domainConfig: DomainPackConfig;
 
   addTable: (table: TableInfo) => void;
   updateTable: (name: string, patch: Partial<TableInfo>) => void;
@@ -87,6 +123,7 @@ type AppStore = {
   clearActiveWidget: () => void;
   selectAllTablesForChat: () => void;
   deselectAllTablesForChat: () => void;
+  fetchDomainConfig: () => Promise<void>;
 };
 
 const storeInitializer: StateCreator<AppStore> = (set) => ({
@@ -101,6 +138,7 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   logPath: null,
   selectedTablesForChat: new Set<string>(),
   activeWidget: null,
+  domainConfig: DEFAULT_DOMAIN_CONFIG,
 
   addTable: (table) =>
     set((state) => ({ tables: [...state.tables, table] })),
@@ -201,6 +239,16 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
       set({ logPath: path });
     } catch {
       // Non-fatal — just leave logPath as null
+    }
+  },
+  fetchDomainConfig: async () => {
+    if (!isTauri()) return;
+    try {
+      const raw = await invoke<string>("get_domain_pack_config");
+      const config = JSON.parse(raw) as DomainPackConfig;
+      set({ domainConfig: config });
+    } catch {
+      // Non-fatal — keep default config
     }
   },
 });

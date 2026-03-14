@@ -1,5 +1,6 @@
 mod analysis;
 mod db_manager;
+pub mod domain_pack;
 mod executor;
 mod identifiers;
 mod ingest;
@@ -31,5 +32,9 @@ pub use schema::fetch_column_samples;
 pub use schema::raw_staging_schema;
 pub use schema::table_schema;
 pub use schema::TableColumn;
+pub use domain_pack::{
+    detect_domain_columns, format_domain_column_annotations, ColumnDetectionRule, DomainPack,
+    UiConfig,
+};
 pub use identifiers::validate_table_name;
 pub use types::EngineResult;

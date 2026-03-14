@@ -12,6 +12,17 @@ static DB_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 /// Absolute path to the current log file. Set once in `run()` setup.
 static LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
+/// Active domain pack for the current session. Set once at startup.
+static DOMAIN_PACK: std::sync::OnceLock<spatia_engine::DomainPack> = std::sync::OnceLock::new();
+
+fn active_domain_pack() -> &'static spatia_engine::DomainPack {
+    DOMAIN_PACK.get().unwrap_or_else(|| {
+        // Fallback for tests or if setup hasn't run yet
+        static DEFAULT: std::sync::OnceLock<spatia_engine::DomainPack> = std::sync::OnceLock::new();
+        DEFAULT.get_or_init(spatia_engine::DomainPack::default)
+    })
+}
+
 fn db_path() -> &'static str {
     DB_PATH
         .get()
@@ -520,7 +531,14 @@ async fn analysis_chat(table_name: String, user_message: String) -> Result<Strin
 
     let schema =
         spatia_engine::table_schema(db_path(), &table_name).map_err(|err| err.to_string())?;
-    let system_prompt = spatia_ai::build_analysis_chat_system_prompt(&table_name, &schema);
+    let pack = active_domain_pack();
+    let domain_ctx = if pack.system_prompt_extension.is_empty() {
+        None
+    } else {
+        Some(pack.system_prompt_extension.as_str())
+    };
+    let system_prompt =
+        spatia_ai::build_analysis_chat_system_prompt_with_domain(&table_name, &schema, domain_ctx);
     let full_prompt = format!(
         "{system}\n\n## User message\n{message}\n",
         system = system_prompt,
@@ -555,7 +573,14 @@ async fn generate_analysis_sql(table_name: String, user_goal: String) -> Result<
 
     let schema =
         spatia_engine::table_schema(db_path(), &table_name).map_err(|err| err.to_string())?;
-    let prompt = spatia_ai::build_analysis_sql_prompt(&table_name, &schema, &user_goal);
+    let pack = active_domain_pack();
+    let domain_ctx = if pack.system_prompt_extension.is_empty() {
+        None
+    } else {
+        Some(pack.system_prompt_extension.as_str())
+    };
+    let prompt =
+        spatia_ai::build_analysis_sql_prompt_with_domain(&table_name, &schema, &user_goal, domain_ctx);
 
     let sql = match spatia_ai::GeminiClient::from_env() {
         Ok(client) => client
@@ -917,11 +942,32 @@ async fn chat_turn(
         }
     }
 
+    // Build domain context (prompt extension + detected columns)
+    let pack = active_domain_pack();
+    let domain_context = {
+        let mut ctx = pack.system_prompt_extension.clone();
+        if !pack.column_detection_rules.is_empty() {
+            let all_columns: Vec<spatia_engine::TableColumn> = table_schemas
+                .iter()
+                .flat_map(|(_, schema)| schema.iter().cloned())
+                .collect();
+            let detected =
+                spatia_engine::detect_domain_columns(&all_columns, &pack.column_detection_rules);
+            let annotations = spatia_engine::format_domain_column_annotations(&detected);
+            if !annotations.is_empty() {
+                ctx.push_str(&annotations);
+            }
+        }
+        if ctx.is_empty() { None } else { Some(ctx) }
+    };
+
     // Build unified prompt
-    let prompt = spatia_ai::build_unified_chat_prompt(
+    let prompt = spatia_ai::build_unified_chat_prompt_with_domain(
         &table_schemas,
         &user_message,
         &conversation_history,
+        None,
+        domain_context.as_deref(),
     );
 
     // Call Gemini with JSON mode
@@ -1041,11 +1087,13 @@ async fn chat_turn(
                     }
 
                     // Build a retry prompt and ask Gemini for a corrected SQL statement.
-                    let retry_prompt = spatia_ai::build_analysis_retry_prompt(
+                    let retry_prompt = spatia_ai::build_analysis_retry_prompt_with_domain(
                         &user_message,
                         &table_schemas,
                         sql_str,
                         &first_err_str,
+                        None,
+                        domain_context.as_deref(),
                     );
 
                     let retry_sql_raw = match client.generate(&retry_prompt).await {
@@ -1182,6 +1230,14 @@ fn check_api_config() -> Result<String, String> {
     serde_json::to_string(&ApiConfigResponse { gemini, geocodio }).map_err(|e| e.to_string())
 }
 
+// ---- Domain pack config ----
+
+#[tauri::command]
+fn get_domain_pack_config() -> Result<String, String> {
+    let pack = active_domain_pack();
+    serde_json::to_string(pack).map_err(|e| e.to_string())
+}
+
 // ---- Debug snapshot ----
 
 /// Writes a JSON snapshot of the frontend Zustand store to
@@ -1277,6 +1333,12 @@ pub fn run() {
                 let _ = DB_PATH.set(db.to_string_lossy().into_owned());
                 info!(db_path = %db.display(), "spatia: resolved DuckDB path");
             }
+
+            // Resolve the active domain pack from SPATIA_DOMAIN_PACK env var.
+            let pack = spatia_engine::DomainPack::from_env();
+            info!(domain_pack = %pack.id, "spatia: active domain pack");
+            let _ = DOMAIN_PACK.set(pack);
+
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -1306,6 +1368,7 @@ pub fn run() {
                     chat_turn,
                     check_api_config,
                     get_log_path,
+                    get_domain_pack_config,
                     write_debug_snapshot
                 ]
             }
@@ -1329,7 +1392,8 @@ pub fn run() {
                     ingest_file_pipeline,
                     chat_turn,
                     check_api_config,
-                    get_log_path
+                    get_log_path,
+                    get_domain_pack_config
                 ]
             }
         })

@@ -23,6 +23,57 @@ pub struct CleanResult {
     pub schema_after: Vec<TableColumn>,
 }
 
+/// Common null-sentinel strings that should pass through masking unmodified,
+/// since they represent data-quality patterns the AI needs to detect.
+const NULL_SENTINELS: &[&str] = &[
+    "N/A", "n/a", "NA", "na", "null", "NULL", "none", "None", "NONE", "–", "-", "..",
+];
+
+/// Mask a single cell value using character-class replacement.
+///
+/// - Uppercase letters → `X`
+/// - Lowercase letters → `x`
+/// - Digits → `9`
+/// - Everything else (spaces, punctuation, `$`, `,`, `.`) preserved as-is
+///
+/// Null sentinel values (e.g. `"N/A"`, `"null"`) pass through unmasked so the
+/// AI can still detect them.
+fn mask_cell(value: &str) -> String {
+    if NULL_SENTINELS.contains(&value.trim()) {
+        return value.to_string();
+    }
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_uppercase() {
+                'X'
+            } else if c.is_ascii_lowercase() {
+                'x'
+            } else if c.is_ascii_digit() {
+                '9'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// Mask all sample rows so real data values are not sent to the AI.
+///
+/// Preserves the structure (whitespace, casing pattern, punctuation, format)
+/// so the AI can still identify data-quality issues.
+fn mask_sample_rows(raw: &str) -> String {
+    raw.lines()
+        .map(|line| {
+            line.split(',')
+                .map(mask_cell)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Fetch up to `SAMPLE_ROW_COUNT` rows from `table_name` and format them as
 /// comma-separated lines (simple CSV-like text for the AI prompt).
 fn fetch_sample_rows(conn: &Connection, table_name: &str) -> AiResult<String> {
@@ -197,13 +248,12 @@ pub async fn clean_table(
 
     for round in 1..=MAX_CLEAN_ROUNDS {
         // Open a connection, do all synchronous work, then drop it before awaiting.
-        let (sample_rows, prompt) = {
+        let prompt = {
             let conn = Connection::open(db_path)?;
             let rows = fetch_sample_rows(&conn, table_name)?;
-            let p = build_clean_prompt(table_name, &schema, &rows);
-            (rows, p)
+            let masked = mask_sample_rows(&rows);
+            build_clean_prompt(table_name, &schema, &masked)
         };
-        let _ = sample_rows; // consumed into prompt
 
         debug!(
             table = %table_name,
@@ -356,7 +406,7 @@ pub async fn clean_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_sql_statements, validate_schema_types, validate_statement};
+    use super::{extract_sql_statements, mask_cell, mask_sample_rows, validate_schema_types, validate_statement};
     use spatia_engine::TableColumn;
 
     fn col(name: &str, data_type: &str, cid: i64) -> TableColumn {
@@ -440,5 +490,58 @@ WHERE city IS NOT NULL;"#;
         let before = vec![col("count", "INTEGER", 0)];
         let after = vec![col("count", "VARCHAR", 0)];
         assert!(validate_schema_types(&before, &after).is_err());
+    }
+
+    #[test]
+    fn mask_cell_preserves_casing_pattern() {
+        assert_eq!(mask_cell("Seattle"), "Xxxxxxx");
+        assert_eq!(mask_cell("PORTLAND"), "XXXXXXXX");
+        assert_eq!(mask_cell("portland"), "xxxxxxxx");
+    }
+
+    #[test]
+    fn mask_cell_preserves_whitespace() {
+        assert_eq!(mask_cell("  Seattle "), "  Xxxxxxx ");
+        assert_eq!(mask_cell("  "), "  ");
+        assert_eq!(mask_cell(""), "");
+    }
+
+    #[test]
+    fn mask_cell_preserves_number_format() {
+        assert_eq!(mask_cell("$1,200.00"), "$9,999.99");
+        assert_eq!(mask_cell("123.45"), "999.99");
+        assert_eq!(mask_cell("(555) 867-5309"), "(999) 999-9999");
+    }
+
+    #[test]
+    fn mask_cell_preserves_null_sentinels() {
+        assert_eq!(mask_cell("N/A"), "N/A");
+        assert_eq!(mask_cell("null"), "null");
+        assert_eq!(mask_cell("NULL"), "NULL");
+        assert_eq!(mask_cell("none"), "none");
+        assert_eq!(mask_cell("None"), "None");
+        assert_eq!(mask_cell("–"), "–");
+        assert_eq!(mask_cell("-"), "-");
+        assert_eq!(mask_cell("n/a"), "n/a");
+    }
+
+    #[test]
+    fn mask_cell_preserves_trimmed_null_sentinels() {
+        assert_eq!(mask_cell("  N/A  "), "  N/A  ");
+        assert_eq!(mask_cell(" null "), " null ");
+    }
+
+    #[test]
+    fn mask_sample_rows_masks_all_cells() {
+        let input = "1,Seattle,WA\n2,portland,OR";
+        let expected = "9,Xxxxxxx,XX\n9,xxxxxxxx,XX";
+        assert_eq!(mask_sample_rows(input), expected);
+    }
+
+    #[test]
+    fn mask_sample_rows_preserves_empty_lines() {
+        let input = "hello,world\n\ngoodbye,world";
+        let expected = "xxxxx,xxxxx\n\nxxxxxxx,xxxxx";
+        assert_eq!(mask_sample_rows(input), expected);
     }
 }

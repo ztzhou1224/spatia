@@ -4,9 +4,17 @@
 
 Quick-start memory file for constraints, invariants, and daily commands.
 
-## Strategic Direction
+## Product Direction (as of 2026-03-14)
 
-Local-first, AI-powered spatial intelligence for data analysts without GIS backgrounds. Target: analysts with address data and spatial questions who cannot justify ArcGIS Pro or Carto enterprise pricing. Monetization: free desktop (acquisition) + Spatia Cloud ($15-25/user/mo) + Enterprise ($50-100/user/mo). Local-first = distribution strategy + compliance feature; cloud = business model.
+**Pivot**: Spatia is now a **BYOK AI-native desktop app for insurance underwriters**. The core value proposition: analyze proprietary portfolio data against spatial risk layers, entirely on your machine, with AI that understands underwriting.
+
+**Monetization**: The app is the distribution vehicle. Curated hazard/risk datasets (wildfire, flood, wind, COPE) are the product, sold as a data subscription. A cracked app with stale data is useless to a professional underwriter.
+
+**Competitive moat**: Local-first privacy + proprietary data analysis + domain-specific AI (underwriter expert agent) + curated risk data subscription. Google Ask Maps (launched 2026-03-12) validates "talk to a map" UX but targets consumers, not underwriters.
+
+## Feature Development Process (MANDATORY)
+
+Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDENCE (web search for real-world scenarios) -> REFINE -> SPEC (Tech Lead) -> BUILD (Engineer) -> VERIFY (Test + PM + Underwriter Expert). No feature ships without underwriter domain validation and real-world evidence.
 
 ## Current Stack
 
@@ -27,11 +35,11 @@ Local-first, AI-powered spatial intelligence for data analysts without GIS backg
 
 1. `PRAGMA table_info` boolean fields map to `bool`.
 2. DuckDB extensions are connection-scoped; load per connection.
-3. Overture release pinning required for reproducible extracts.
-4. Temp DuckDB test cleanup: `.duckdb`, `.wal`, `.wal.lck`.
-5. Analysis SQL: prefix enforced + 15-pattern blocked keyword scan (word-boundary regexes).
-6. DB path fixed at `src-tauri/spatia.duckdb`; no user-facing path input.
-7. Geocoding: batch-first, local-first (Overture fuzzy -> Geocodio fallback), returns confidence/source metadata.
+3. Overture release pinning is required for reproducible extracts.
+4. Temp DuckDB test cleanup should remove `.duckdb`, `.wal`, `.wal.lck`.
+5. Analysis SQL execution validates prefix (`CREATE [OR REPLACE] VIEW analysis_result AS ...`) and scans the body for 15 blocked keyword patterns using word-boundary regexes.
+6. User-facing DB path inputs are removed; app uses fixed DB file path `src-tauri/spatia.duckdb`.
+7. Engine `geocode` is batch-first and local-first: Overture fuzzy match -> Geocodio fallback -> persistent cache.
 
 ## Core Paths
 
@@ -43,9 +51,21 @@ Local-first, AI-powered spatial intelligence for data analysts without GIS backg
 - Engine: `src-tauri/crates/engine/src/`
 - AI: `src-tauri/crates/ai/src/`
 
+## Agent Team
+
+| Agent | Role |
+|-------|------|
+| senior-engineer | Full-stack implementation |
+| gis-tech-lead | Architecture, specs, coordination |
+| underwriter-expert (NEW) | Domain validation gate, industry expertise |
+| product-manager | User stories, acceptance, verification |
+| test-engineer | TDD, integration tests, E2E |
+| ui-design-architect | Component design, UX |
+| gis-domain-expert | Spatial analysis advisory |
+
 ## Operational Commands
 
-- Dev: `pnpm tauri dev`
+- Dev: `pnpm tauri dev` (insurance mode: `SPATIA_DOMAIN_PACK=insurance_underwriting pnpm tauri dev`)
 - Build: `pnpm build`
 - Test: `cargo test --workspace`
 - Lint: `cargo clippy --workspace`
@@ -53,7 +73,7 @@ Local-first, AI-powered spatial intelligence for data analysts without GIS backg
 ## Active Risks
 
 - Pre-launch blockers: no data export, no settings UI, no map legend, no map export (see `plan.md` Phase 1).
+- Risk layer data model and subscription infrastructure not yet built.
 - Single-provider AI dependency (Gemini only).
-- Carto AI Agents narrowing NL spatial query differentiation -- speed to market critical.
 - Setup friction (PMTiles + env vars) blocks non-technical users.
 - 1K feature limit causes silent truncation on real-world datasets.
