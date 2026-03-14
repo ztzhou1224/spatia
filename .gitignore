@@ -25,6 +25,9 @@ dist-ssr
 
 .env
 
+# Claude Code agent worktrees (transient)
+.claude/worktrees/
+
 # Screenshot output from scripts/capture-app.sh
 scripts/screenshots/
 # Dev-server log from scripts/ensure-app-running.sh
