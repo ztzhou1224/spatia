@@ -1,6 +1,8 @@
 use spatia_geocode::{
-    cache_lookup, cache_store, ensure_cache_table, geocode_batch, normalize_address,
-    score_candidate, tokenize_address, GeocodeBatchResult, GeocodeResult,
+    cache_lookup, cache_store, ensure_cache_table, geocode_batch,
+    geocode_batch_with_components, normalize_address, score_candidate, tokenize_address,
+    components_from_columns, components_from_string, extract_zip,
+    GeocodeBatchResult, GeocodeResult,
 };
 use duckdb::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -712,5 +714,160 @@ fn end_to_end_ingest_and_geocode_with_seeded_cache() {
     assert_eq!(results[1].address, "400 Broad St, Seattle, WA 98109");
     assert!((results[1].lat - 47.6205).abs() < 1e-4);
 
+    cleanup(&path);
+}
+
+// ---- Address component parsing tests ----
+
+#[test]
+fn extract_zip_from_full_address() {
+    assert_eq!(extract_zip("123 Main St, Tampa, FL 33603"), Some("33603".to_string()));
+}
+
+#[test]
+fn extract_zip_handles_zip_plus_4() {
+    assert_eq!(extract_zip("123 Main St 33603-1234"), Some("33603".to_string()));
+}
+
+#[test]
+fn extract_zip_returns_none_for_no_zip() {
+    assert_eq!(extract_zip("123 Main St, Tampa, FL"), None);
+}
+
+#[test]
+fn components_from_string_extracts_zip_and_state() {
+    let c = components_from_string("123 Main St, Tampa, FL 33603");
+    assert_eq!(c.zip, Some("33603".to_string()));
+    assert_eq!(c.state, Some("FL".to_string()));
+    assert_eq!(c.number, Some("123".to_string()));
+    assert_eq!(c.full, "123 Main St, Tampa, FL 33603");
+}
+
+#[test]
+fn components_from_string_no_zip() {
+    let c = components_from_string("123 Main St, Tampa, FL");
+    assert_eq!(c.zip, None);
+    assert_eq!(c.state, Some("FL".to_string()));
+    assert_eq!(c.number, Some("123".to_string()));
+}
+
+#[test]
+fn components_from_columns_builds_full() {
+    let c = components_from_columns("123 Main St", Some("Tampa"), Some("FL"), Some("33603"));
+    assert_eq!(c.full, "123 Main St, Tampa, FL, 33603");
+    assert_eq!(c.zip, Some("33603".to_string()));
+    assert_eq!(c.state, Some("FL".to_string()));
+    assert_eq!(c.city, Some("Tampa".to_string()));
+    assert_eq!(c.number, Some("123".to_string()));
+    assert_eq!(c.street, Some("123 Main St".to_string()));
+}
+
+#[test]
+fn components_from_columns_handles_missing_parts() {
+    let c = components_from_columns("123 Main St", None, None, None);
+    assert_eq!(c.full, "123 Main St");
+    assert_eq!(c.zip, None);
+    assert_eq!(c.state, None);
+    assert_eq!(c.city, None);
+}
+
+#[test]
+fn components_from_columns_validates_state_abbrev() {
+    // "XX" is not a valid state
+    let c = components_from_columns("123 Main St", None, Some("XX"), None);
+    assert_eq!(c.state, None);
+    // "FL" is valid
+    let c2 = components_from_columns("123 Main St", None, Some("FL"), None);
+    assert_eq!(c2.state, Some("FL".to_string()));
+}
+
+// ---- Overture cache table tests ----
+
+#[test]
+fn overture_cache_table_creation() {
+    let conn = Connection::open_in_memory().expect("open");
+    spatia_geocode::overture_cache::ensure_cache_table(&conn).expect("ensure cache table");
+
+    // Verify table exists
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'overture_addr_cache'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query");
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn overture_cache_cached_postcodes_empty() {
+    let conn = Connection::open_in_memory().expect("open");
+    spatia_geocode::overture_cache::ensure_cache_table(&conn).expect("ensure");
+    let zips = spatia_geocode::overture_cache::cached_postcodes(&conn).unwrap_or_default();
+    assert!(zips.is_empty());
+}
+
+// ---- geocode_batch_with_components tests ----
+
+#[test]
+fn geocode_batch_with_components_uses_cache() {
+    let (path, conn) = temp_db();
+    let records = vec![GeocodeResult {
+        address: "123 Main St, Tampa, FL, 33603".to_string(),
+        lat: 27.9506,
+        lon: -82.4572,
+        source: "geocodio".to_string(),
+    }];
+    cache_store(&conn, &records, "geocodio").expect("seed");
+    drop(conn);
+
+    let components = vec![components_from_columns("123 Main St", Some("Tampa"), Some("FL"), Some("33603"))];
+    let (results, stats) = geocode_batch_with_components(&path, &components).expect("batch");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].address, "123 Main St, Tampa, FL, 33603");
+    assert!(stats.cache_hits >= 1);
+    cleanup(&path);
+}
+
+#[test]
+fn geocode_batch_with_components_empty_input() {
+    let (path, _conn) = temp_db();
+    let (results, _stats) = geocode_batch_with_components(&path, &[]).expect("empty batch");
+    assert!(results.is_empty());
+    cleanup(&path);
+}
+
+#[test]
+fn geocode_batch_with_components_stats_tracking() {
+    let (path, conn) = temp_db();
+    let records = vec![
+        GeocodeResult {
+            address: "addr A".to_string(),
+            lat: 1.0,
+            lon: 2.0,
+            source: "geocodio".to_string(),
+        },
+        GeocodeResult {
+            address: "addr B".to_string(),
+            lat: 3.0,
+            lon: 4.0,
+            source: "geocodio".to_string(),
+        },
+    ];
+    cache_store(&conn, &records, "geocodio").expect("seed");
+    drop(conn);
+
+    let components = vec![
+        components_from_string("addr A"),
+        components_from_string("addr B"),
+    ];
+    let (results, stats) = geocode_batch_with_components(&path, &components).expect("batch");
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(stats.total, 2);
+    assert_eq!(stats.geocoded, 2);
+    assert_eq!(stats.cache_hits, 2);
+    assert_eq!(stats.unresolved, 0);
     cleanup(&path);
 }
