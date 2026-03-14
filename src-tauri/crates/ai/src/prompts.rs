@@ -16,7 +16,7 @@ fn format_schema_with_samples(
         let table_samples = all_samples.and_then(|s| s.get(table_name));
         for col in schema {
             section.push_str(&format!(
-                "  - {} {} (not_null: {}, primary_key: {})",
+                "  - \"{}\" {} (not_null: {}, primary_key: {})",
                 col.name, col.data_type, col.notnull, col.primary_key
             ));
             if let Some(samples) = table_samples.and_then(|s| s.get(&col.name)) {
@@ -42,7 +42,7 @@ pub fn build_clean_prompt(table_name: &str, schema: &[TableColumn], sample_rows:
         .iter()
         .map(|col| {
             format!(
-                "  {} {} (not_null: {})",
+                "  \"{}\" {} (not_null: {})",
                 col.name, col.data_type, col.notnull
             )
         })
@@ -54,6 +54,11 @@ Your task is to write DuckDB SQL UPDATE statements that fix data quality issues
 in the table `{table}`.
 
 IMPORTANT: You are generating SQL for DuckDB, NOT PostgreSQL or MySQL.
+
+## CRITICAL: Always double-quote column identifiers
+Every column reference in your SQL MUST be wrapped in double quotes.
+Example: UPDATE {table} SET "city" = TRIM("city") WHERE "city" IS NOT NULL;
+This prevents errors when column names conflict with DuckDB reserved words or contain special characters.
 
 ## DuckDB string functions you may use
 - UPPER(col), LOWER(col), TRIM(col), LTRIM(col), RTRIM(col)
@@ -76,12 +81,12 @@ IMPORTANT: You are generating SQL for DuckDB, NOT PostgreSQL or MySQL.
 ## Common recipes
 
 ### Title-case a multi-word column (e.g. city names) — copy this exactly:
-UPDATE {table} SET col = ARRAY_TO_STRING(
+UPDATE {table} SET "col" = ARRAY_TO_STRING(
     LIST_TRANSFORM(
-        STRING_SPLIT(LOWER(TRIM(col)), ' '),
+        STRING_SPLIT(LOWER(TRIM("col")), ' '),
         x -> CONCAT(UPPER(x[1]), x[2:])
     ), ' ')
-WHERE col IS NOT NULL;
+WHERE "col" IS NOT NULL;
 
 ## DO NOT USE — these do not exist in DuckDB
 - INITCAP — not available; use the LIST_TRANSFORM recipe above for title case
@@ -108,8 +113,8 @@ WHERE col IS NOT NULL;
    - Inconsistent casing (e.g., mixed upper/lower case city names).
    - Obvious null sentinels stored as strings (e.g., "N/A", "null", "none", "–").
    - Numeric values stored as strings with extra punctuation (e.g., "$1,200.00").
-2. Write minimal, targeted DuckDB `UPDATE {table} SET ... WHERE ...` statements
-   that fix each identified problem.
+2. Write minimal, targeted DuckDB `UPDATE {table} SET "col" = ... WHERE "col" IS NOT NULL` statements
+   that fix each identified problem. ALWAYS double-quote every column name.
 3. Return ONLY valid DuckDB SQL statements, one per line.
    Do NOT include explanations, markdown fences, or any other text.
    If no cleaning is needed, return the single comment: -- no changes needed
@@ -195,12 +200,13 @@ pub fn build_analysis_retry_prompt_with_domain(
 1. Return exactly one DuckDB SQL statement.
 2. The SQL must be `CREATE OR REPLACE VIEW analysis_result AS ...`.
 3. Use only columns present in the schemas above.
-4. Return ONLY the corrected SQL — no markdown, no explanation.
-5. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) — they do not exist in DuckDB.
-6. DO NOT use ST_HexagonGrid, ST_SquareGrid, or ST_MakeEnvelope — they do not exist in DuckDB spatial.
-7. DO NOT use ST_Distance or ST_DWithin for distance calculations — DuckDB spatial does not support these on raw lat/lon pairs. Use Haversine formula instead.
-8. For heatmap/hexbin visualizations, just return rows with lat/lon columns — the frontend handles spatial aggregation.
-9. When filtering on categorical/enum columns, use the EXACT values shown in the sample values above. Do not guess or expand abbreviations.
+4. ALWAYS double-quote every column name (e.g. SELECT "city", "latitude" AS _lat). Unquoted column names cause "not found in FROM clause" errors.
+5. Return ONLY the corrected SQL — no markdown, no explanation.
+6. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) — they do not exist in DuckDB.
+7. DO NOT use ST_HexagonGrid, ST_SquareGrid, or ST_MakeEnvelope — they do not exist in DuckDB spatial.
+8. DO NOT use ST_Distance or ST_DWithin for distance calculations — DuckDB spatial does not support these on raw lat/lon pairs. Use Haversine formula instead.
+9. For heatmap/hexbin visualizations, just return rows with lat/lon columns — the frontend handles spatial aggregation.
+10. When filtering on categorical/enum columns, use the EXACT values shown in the sample values above. Do not guess or expand abbreviations.
 "#,
         domain = domain_section,
         question = user_question.trim(),
@@ -227,9 +233,10 @@ Fix the SQL so it works correctly in DuckDB (NOT PostgreSQL or MySQL).
 Rules:
 - Return ONLY the corrected UPDATE statement, nothing else.
 - No markdown fences, no explanations.
+- ALWAYS double-quote every column name (e.g. "city", "wind_deductible_pct"). Unquoted column names cause "not found in FROM clause" errors.
 - DO NOT use: INITCAP, STRING_SPLIT_BY_REGEX, ARRAY_JOIN, or \m regex (PostgreSQL-only).
 - For multi-word title case use this exact pattern:
-    ARRAY_TO_STRING(LIST_TRANSFORM(STRING_SPLIT(LOWER(TRIM(col)), ' '), x -> CONCAT(UPPER(x[1]), x[2:])), ' ')
+    ARRAY_TO_STRING(LIST_TRANSFORM(STRING_SPLIT(LOWER(TRIM("col")), ' '), x -> CONCAT(UPPER(x[1]), x[2:])), ' ')
 - For regex word boundaries use \b (RE2), NOT \m.
 - Use ARRAY_TO_STRING (not ARRAY_JOIN) to join lists.
 - Use STRING_SPLIT (not STRING_SPLIT_BY_REGEX) to split strings.
@@ -256,7 +263,7 @@ pub fn build_analysis_chat_system_prompt_with_domain(
         .iter()
         .map(|col| {
             format!(
-                "  - {} {} (not_null: {}, primary_key: {})",
+                "  - \"{}\" {} (not_null: {}, primary_key: {})",
                 col.name, col.data_type, col.notnull, col.primary_key
             )
         })
@@ -280,8 +287,9 @@ You are helping the user analyze geospatial data in DuckDB.
 ## Rules
 1. Ground your response in the provided schema.
 2. Prefer DuckDB SQL that can run as-is.
-3. If a requested field does not exist, state that clearly and suggest an alternative.
-4. Keep responses concise and action-oriented.
+3. ALWAYS double-quote every column and table name in SQL (e.g. SELECT "city" FROM "my_table").
+4. If a requested field does not exist, state that clearly and suggest an alternative.
+5. Keep responses concise and action-oriented.
 "#,
         domain = domain_section,
         table = table_name,
@@ -310,7 +318,7 @@ pub fn build_analysis_sql_prompt_with_domain(
         .iter()
         .map(|col| {
             format!(
-                "  - {} {} (not_null: {}, primary_key: {})",
+                "  - \"{}\" {} (not_null: {}, primary_key: {})",
                 col.name, col.data_type, col.notnull, col.primary_key
             )
         })
@@ -337,9 +345,10 @@ pub fn build_analysis_sql_prompt_with_domain(
 1. Return exactly one DuckDB SQL statement.
 2. The SQL must be `CREATE OR REPLACE VIEW analysis_result AS ...`.
 3. Use only columns present in the schema.
-4. Do not include markdown, comments, or explanation text.
-5. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) or ST_HexagonGrid — they do not exist in DuckDB.
-6. For heatmap/hexbin visualizations, just SELECT rows with lat/lon — the frontend handles spatial aggregation.
+4. ALWAYS double-quote every column name (e.g. SELECT "city", "latitude" AS _lat). Unquoted column names cause "not found in FROM clause" errors.
+5. Do not include markdown, comments, or explanation text.
+6. DO NOT use H3 functions (h3_latlng_to_cell, h3_cell_to_latlng, etc.) or ST_HexagonGrid — they do not exist in DuckDB.
+7. For heatmap/hexbin visualizations, just SELECT rows with lat/lon — the frontend handles spatial aggregation.
 "#,
         domain = domain_section,
         table = table_name,
@@ -445,10 +454,12 @@ pub fn build_unified_chat_prompt_with_domain(
 2. If the question requires data analysis, generate a DuckDB SQL query.
 3. SQL MUST end with: CREATE OR REPLACE VIEW analysis_result AS <your final query>
 4. Use only columns that exist in the schemas above.
-5. For geocoded tables, use _lat and _lon columns for coordinates.
-6. You can JOIN across tables if the user's question requires it.
-7. For map navigation, include appropriate map_actions.
-8. For complex analyses, you may use up to 5 intermediate views named `_spatia_step_1`, `_spatia_step_2`, etc. Each must be `CREATE OR REPLACE VIEW _spatia_step_N AS ...`. The final statement must always be `CREATE OR REPLACE VIEW analysis_result AS ...`. Separate all statements with semicolons.
+5. ALWAYS double-quote every column name (e.g. SELECT "city", "latitude" AS _lat FROM "my_table"). Unquoted column names cause "not found in FROM clause" errors.
+6. For geocoded tables, use _lat and _lon columns for coordinates.
+7. You can JOIN across tables if the user's question requires it.
+8. Double-quote table names too (e.g. FROM "commercial_property_portfolio").
+9. For map navigation, include appropriate map_actions.
+10. For complex analyses, you may use up to 5 intermediate views named `_spatia_step_1`, `_spatia_step_2`, etc. Each must be `CREATE OR REPLACE VIEW _spatia_step_N AS ...`. The final statement must always be `CREATE OR REPLACE VIEW analysis_result AS ...`. Separate all statements with semicolons.
 
 ### When to use multi-step SQL
 Use intermediate views when the analysis requires multiple logical stages. For example, to filter raw data, then aggregate, then rank:
