@@ -236,7 +236,7 @@ fn detect_address_columns(table_name: String) -> Result<String, String> {
             ["address", "addr", "street", "location", "place"]
                 .iter()
                 .any(|p| name.contains(p))
-                || ["city", "zip", "postal", "suburb", "neighbourhood"]
+                || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
                     .contains(&name.as_str())
         })
         .map(|col| col.name)
@@ -863,7 +863,7 @@ async fn ingest_file_pipeline(
                 ["address", "addr", "street", "location", "place"]
                     .iter()
                     .any(|p| name.contains(p))
-                    || ["city", "zip", "postal", "suburb", "neighbourhood"]
+                    || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
                         .contains(&name.as_str())
             })
             .map(|col| col.name)
