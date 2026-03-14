@@ -19,6 +19,10 @@ path = "src/bin/seed_fuzzy_bench.rs"
 name = "gen_fuzzy_variations"
 path = "src/bin/gen_fuzzy_variations.rs"
 
+[[bin]]
+name = "geocode_strategy_bench"
+path = "src/bin/geocode_strategy_bench.rs"
+
 [dependencies]
 spatia_engine = { path = "../engine" }
 spatia_ai = { path = "../ai", features = ["gemini"] }

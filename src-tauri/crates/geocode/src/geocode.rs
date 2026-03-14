@@ -359,7 +359,243 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
     geocode_batch_with_components(db_path, &components)
 }
 
-/// Geocode pre-parsed address components using a 3-pass Overture-first strategy.
+/// Maximum batch size for the API-first fast path.
+/// Batches at or below this size skip the Overture S3 download cascade
+/// when `SPATIA_GEOCODIO_API_KEY` is available, going straight to
+/// Cache → Geocodio API → GERS reverse lookup.
+///
+/// Override with `SPATIA_GEOCODE_FAST_PATH_LIMIT` env var.
+fn fast_path_limit() -> usize {
+    std::env::var("SPATIA_GEOCODE_FAST_PATH_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(500)
+}
+
+/// API-first fast path: Cache → Geocodio API → (optional) GERS reverse lookup.
+///
+/// Skips the expensive Overture S3 download cascade entirely. For a 50-row
+/// commercial property portfolio spread across 40+ cities, this reduces
+/// geocoding from 15+ minutes (downloading millions of Overture rows) to
+/// ~2 seconds (single Geocodio batch API call).
+pub fn geocode_batch_api_first(
+    db_path: &str,
+    components: &[AddressComponents],
+) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
+    let addresses: Vec<String> = components.iter().map(|c| c.full.clone()).collect();
+
+    info!(address_count = addresses.len(), "geocode_batch_api_first: starting fast-path geocode");
+
+    let conn = Connection::open(db_path)?;
+
+    // ---- Step 1: Cache lookup ----
+    let (cached_hits, misses) = cache_lookup(&conn, &addresses)?;
+    let cache_hit_count = cached_hits.len();
+    debug!(cache_hits = cache_hit_count, cache_misses = misses.len(), "geocode_batch_api_first: cache lookup complete");
+
+    let mut resolved_by_address: HashMap<String, GeocodeBatchResult> = HashMap::new();
+
+    for result in cached_hits {
+        resolved_by_address.insert(
+            result.address.clone(),
+            GeocodeBatchResult {
+                address: result.address,
+                lat: result.lat,
+                lon: result.lon,
+                confidence: default_confidence(&result.source),
+                source: result.source,
+                matched_label: None,
+                matched_table: None,
+                gers_id: None,
+            },
+        );
+    }
+
+    // ---- Step 2: Try exact/fuzzy Overture match from EXISTING cache only (no S3 downloads) ----
+    let mut overture_exact_count = 0usize;
+    let mut local_fuzzy_count = 0usize;
+    let mut api_resolved_count = 0usize;
+
+    if !misses.is_empty() {
+        let miss_set: HashSet<&str> = misses.iter().map(String::as_str).collect();
+        let miss_components: Vec<&AddressComponents> = components
+            .iter()
+            .filter(|c| miss_set.contains(c.full.as_str()))
+            .collect();
+
+        // Try exact Overture match from already-cached data (no S3 downloads)
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) {
+                continue;
+            }
+            let number = comp.number.as_deref();
+            let street = comp.street.as_deref();
+            let zip = comp.zip.as_deref();
+
+            if number.is_some() && street.is_some() && zip.is_some() {
+                match overture_cache::exact_overture_match(&conn, number, street, zip) {
+                    Ok(Some(mut result)) => {
+                        result.address = comp.full.clone();
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        overture_exact_count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => debug!(error = %e, "geocode_batch_api_first: exact_overture_match error"),
+                }
+            }
+        }
+
+        // Try fuzzy Overture match from existing cache
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) {
+                continue;
+            }
+            match overture_cache::fuzzy_overture_match(
+                &conn,
+                &comp.full,
+                comp.zip.as_deref(),
+                comp.city.as_deref(),
+                comp.state.as_deref(),
+            ) {
+                Ok(Some(mut result)) => {
+                    let threshold = local_accept_threshold();
+                    if result.confidence >= threshold {
+                        result.address = comp.full.clone();
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        local_fuzzy_count += 1;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => debug!(error = %e, "geocode_batch_api_first: fuzzy_overture_match error"),
+            }
+        }
+
+        // ---- Step 3: Geocodio API for everything still unresolved ----
+        let unresolved: Vec<String> = misses
+            .into_iter()
+            .filter(|address| !resolved_by_address.contains_key(address))
+            .collect();
+
+        if !unresolved.is_empty() {
+            let api_key = std::env::var("SPATIA_GEOCODIO_API_KEY").map_err(|_| {
+                "SPATIA_GEOCODIO_API_KEY environment variable not set"
+            })?;
+            let base_url = std::env::var("SPATIA_GEOCODIO_BASE_URL")
+                .unwrap_or_else(|_| "https://api.geocod.io".to_string());
+
+            info!(unresolved_count = unresolved.len(), "geocode_batch_api_first: calling Geocodio API");
+            let geocodio_results = run_async(geocode_via_geocodio_inner(&api_key, &unresolved, &base_url))?;
+            api_resolved_count = geocodio_results.len();
+
+            let cache_records: Vec<GeocodeResult> = geocodio_results
+                .iter()
+                .map(|e: &GeocodioEnrichedResult| e.inner.clone())
+                .collect();
+            cache_store(&conn, &cache_records, "geocodio")?;
+
+            // Batch GERS reverse lookup
+            let addr_to_zip: HashMap<String, Option<String>> = components
+                .iter()
+                .map(|c| (c.full.clone(), c.zip.clone()))
+                .collect();
+
+            for enriched in geocodio_results {
+                let confidence = if enriched.accuracy > 0.0 {
+                    enriched.accuracy
+                } else {
+                    default_confidence("geocodio")
+                };
+
+                let zip_hint = addr_to_zip
+                    .get(&enriched.inner.address)
+                    .and_then(|z| z.as_deref());
+                let gers_id = overture_cache::reverse_lookup_gers(
+                    &conn,
+                    enriched.inner.lat,
+                    enriched.inner.lon,
+                    zip_hint,
+                )
+                .unwrap_or(None);
+
+                resolved_by_address.insert(
+                    enriched.inner.address.clone(),
+                    GeocodeBatchResult {
+                        address: enriched.inner.address,
+                        lat: enriched.inner.lat,
+                        lon: enriched.inner.lon,
+                        source: enriched.inner.source,
+                        confidence,
+                        matched_label: None,
+                        matched_table: None,
+                        gers_id,
+                    },
+                );
+            }
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for address in &addresses {
+        if let Some(result) = resolved_by_address.get(address) {
+            ordered.push(result.clone());
+        }
+    }
+
+    let total = addresses.len();
+    let geocoded = ordered.len();
+    let stats = GeocodeStats {
+        total,
+        geocoded,
+        cache_hits: cache_hit_count,
+        overture_exact: overture_exact_count,
+        local_fuzzy: local_fuzzy_count,
+        api_resolved: api_resolved_count,
+        unresolved: total - geocoded,
+    };
+
+    info!(
+        resolved_count = geocoded,
+        total = total,
+        cache_hits = cache_hit_count,
+        overture_exact = overture_exact_count,
+        local_fuzzy = local_fuzzy_count,
+        api_resolved = api_resolved_count,
+        unresolved = total - geocoded,
+        "geocode_batch_api_first: complete"
+    );
+    Ok((ordered, stats))
+}
+
+/// Geocode pre-parsed address components using the best available strategy.
+///
+/// **Strategy selection:**
+/// - If `SPATIA_GEOCODIO_API_KEY` is set and batch size ≤ `fast_path_limit()` (default 500),
+///   uses the API-first fast path: Cache → Geocodio API → GERS reverse lookup.
+///   This avoids expensive Overture S3 downloads for small/medium batches.
+/// - Otherwise, falls back to the full Overture-first pipeline.
+///
+/// The fast path reduces geocoding of a 50-row multi-city CSV from 15+ minutes
+/// to ~2 seconds by skipping millions of Overture S3 row downloads.
+pub fn geocode_batch_with_components(
+    db_path: &str,
+    components: &[AddressComponents],
+) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
+    let limit = fast_path_limit();
+    let has_api_key = std::env::var("SPATIA_GEOCODIO_API_KEY").is_ok();
+
+    if has_api_key && components.len() <= limit {
+        info!(
+            batch_size = components.len(),
+            fast_path_limit = limit,
+            "geocode_batch: using API-first fast path (skipping Overture S3 downloads)"
+        );
+        return geocode_batch_api_first(db_path, components);
+    }
+
+    geocode_batch_overture_first(db_path, components)
+}
+
+/// Full Overture-first geocoding pipeline (original strategy).
 ///
 /// Pipeline:
 /// 1. Cache lookup — return cached hits immediately.
@@ -374,7 +610,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
 /// 5. GERS reverse lookup to attach GERS IDs to Geocodio results.
 ///
 /// Returns both the ordered results and a [`GeocodeStats`] breakdown by source.
-pub fn geocode_batch_with_components(
+pub fn geocode_batch_overture_first(
     db_path: &str,
     components: &[AddressComponents],
 ) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
