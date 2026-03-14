@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use duckdb::Connection;
 use tracing::{debug, error, info, warn};
@@ -6,9 +6,9 @@ use tracing::{debug, error, info, warn};
 use crate::cache::{cache_lookup, cache_store};
 use crate::geocodio::{geocode_via_geocodio_inner, GeocodioEnrichedResult};
 use crate::identifiers::validate_table_name;
+use crate::overture_cache;
 use crate::scoring::{local_accept_threshold, score_candidate, MIN_SCORE};
-use crate::text::normalize_address;
-use crate::text::tokenize_address;
+use crate::text::{normalize_address, tokenize_address, AddressComponents, components_from_string};
 use crate::types::{GeoResult, GeocodeBatchResult, GeocodeResult, GeocodeStats};
 
 #[derive(Debug, Clone)]
@@ -206,6 +206,7 @@ fn tantivy_fuzzy_geocode(
                     confidence: top.score,
                     matched_label: Some(top.label.clone()),
                     matched_table: Some(base_table.clone()),
+                    gers_id: None,
                 },
             ));
         }
@@ -305,6 +306,7 @@ pub fn local_fuzzy_geocode(
                     confidence: score,
                     matched_label: Some(candidate.label),
                     matched_table: Some(candidate.table),
+                    gers_id: None,
                 });
             }
         }
@@ -366,6 +368,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
                 source: result.source,
                 matched_label: None,
                 matched_table: None,
+                gers_id: None,
             },
         );
     }
@@ -466,6 +469,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
                         confidence,
                         matched_label: None,
                         matched_table: None,
+                        gers_id: None,
                     },
                 );
             }
@@ -486,6 +490,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
         total,
         geocoded,
         cache_hits: cache_hit_count,
+        overture_exact: 0, // will be populated by new pipeline
         local_fuzzy: local_fuzzy_count,
         api_resolved: api_resolved_count,
         unresolved,

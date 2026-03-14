@@ -1,3 +1,96 @@
+use std::sync::LazyLock;
+
+use regex::Regex;
+
+static ZIP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\d{5})(?:-\d{4})?\b").unwrap());
+
+/// Parsed address components extracted from a raw address string or columns.
+#[derive(Debug, Clone, Default)]
+pub struct AddressComponents {
+    pub number: Option<String>,
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip: Option<String>,
+    pub full: String,
+}
+
+/// Build `AddressComponents` from explicit CSV columns.
+pub fn components_from_columns(
+    street: &str,
+    city: Option<&str>,
+    state: Option<&str>,
+    zip: Option<&str>,
+) -> AddressComponents {
+    let full = [Some(street), city, state, zip]
+        .iter()
+        .filter_map(|s| {
+            let v = (*s)?.trim();
+            if v.is_empty() { None } else { Some(v.to_string()) }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let validated_zip = zip
+        .and_then(|z| extract_zip(z))
+        .or_else(|| extract_zip(&full));
+
+    let validated_state = state
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| US_STATE_ABBREVS.contains(&s.to_lowercase().as_str()));
+
+    // Try to extract street number from the street column.
+    let tokens = tokenize_address(street);
+    let number = tokens
+        .first()
+        .filter(|t| t.chars().all(|c| c.is_ascii_digit()))
+        .cloned();
+
+    AddressComponents {
+        number,
+        street: Some(street.trim().to_string()),
+        city: city.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()),
+        state: validated_state,
+        zip: validated_zip,
+        full,
+    }
+}
+
+/// Try to build `AddressComponents` from a single free-text address string.
+pub fn components_from_string(address: &str) -> AddressComponents {
+    let full = address.trim().to_string();
+    let zip = extract_zip(&full);
+
+    // Try to find a 2-letter state code near the end of the address.
+    let tokens = tokenize_address(&full);
+    let state = tokens
+        .iter()
+        .rev()
+        .take(4) // state code is usually near the end
+        .find(|t| t.len() == 2 && US_STATE_ABBREVS.contains(&t.as_str()))
+        .map(|s| s.to_uppercase());
+
+    let number = tokens
+        .first()
+        .filter(|t| t.chars().all(|c| c.is_ascii_digit()))
+        .cloned();
+
+    AddressComponents {
+        number,
+        street: Some(full.clone()),
+        city: None, // not easily extractable from free text
+        state,
+        zip,
+        full,
+    }
+}
+
+/// Extract a 5-digit US zip code from an address string.
+/// Handles zip+4 format (e.g., "33603-1234" → "33603").
+pub fn extract_zip(text: &str) -> Option<String> {
+    ZIP_RE.captures(text).map(|c| c[1].to_string())
+}
+
 /// Normalize an address string: strip non-alphanumeric chars, lowercase, collapse whitespace.
 pub fn normalize_address(value: &str) -> String {
     let mut out = String::with_capacity(value.len());

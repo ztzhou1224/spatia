@@ -467,6 +467,7 @@ fn geocode_writes_lat_lon_columns_to_table() {
             confidence: 0.85,
             matched_label: None,
             matched_table: None,
+            gers_id: None,
         },
         GeocodeBatchResult {
             address: "400 Broad St".to_string(),
@@ -476,6 +477,7 @@ fn geocode_writes_lat_lon_columns_to_table() {
             confidence: 0.85,
             matched_label: None,
             matched_table: None,
+            gers_id: None,
         },
     ];
 
@@ -520,6 +522,7 @@ fn geocode_handles_null_address_values() {
         confidence: 0.85,
         matched_label: None,
         matched_table: None,
+        gers_id: None,
     }];
 
     write_geocode_columns(&conn, "places", "address", &results);
@@ -556,6 +559,7 @@ fn geocode_handles_duplicate_addresses_in_table() {
         confidence: 0.85,
         matched_label: None,
         matched_table: None,
+        gers_id: None,
     }];
 
     write_geocode_columns(&conn, "places", "address", &results);
@@ -595,6 +599,7 @@ fn geocode_adds_source_and_confidence_columns() {
         confidence: 0.85,
         matched_label: None,
         matched_table: None,
+        gers_id: None,
     }];
 
     write_geocode_columns(&conn, "places", "address", &results);
@@ -627,6 +632,7 @@ fn geocode_column_write_handles_special_chars_in_address() {
         confidence: 0.85,
         matched_label: None,
         matched_table: None,
+        gers_id: None,
     }];
 
     write_geocode_columns(&conn, "places", "address", &results);
