@@ -3,6 +3,7 @@ import type { MapViewHandle } from "./components/MapView";
 import { FileList } from "./components/FileList";
 import { ChatCard } from "./components/ChatCard";
 import { WidgetPanel } from "./components/WidgetPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { useAppStore } from "./lib/appStore";
 import "./App.css";
 
@@ -15,6 +16,8 @@ function App() {
   const fetchApiConfig = useAppStore((s) => s.fetchApiConfig);
   const fetchLogPath = useAppStore((s) => s.fetchLogPath);
   const fetchDomainConfig = useAppStore((s) => s.fetchDomainConfig);
+  const settingsOpen = useAppStore((s) => s.settingsOpen);
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const [fileListCollapsed, setFileListCollapsed] = useState(false);
 
   useEffect(() => {
@@ -41,10 +44,12 @@ function App() {
         <FileList
           collapsed={fileListCollapsed}
           onToggleCollapse={() => setFileListCollapsed((c) => !c)}
+          onSettingsClick={() => setSettingsOpen(true)}
         />
       </div>
       <WidgetPanel />
       <ChatCard mapViewRef={mapViewRef} panelWidth={panelWidth} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

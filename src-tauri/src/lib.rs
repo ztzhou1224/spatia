@@ -912,6 +912,7 @@ struct ChatTurnResult {
     geojson: Option<Value>,
     map_actions: Vec<Value>,
     row_count: Option<usize>,
+    total_count: Option<usize>,
     result_rows: Option<TabularResultPayload>,
     visualization_type: String,
     /// True when the first SQL attempt failed and a second AI call produced the
@@ -980,6 +981,7 @@ async fn chat_turn(
                 geojson: None,
                 map_actions: vec![],
                 row_count: None,
+                total_count: None,
                 result_rows: None,
                 visualization_type: "scatter".to_string(),
                 retry_attempted: false,
@@ -1029,7 +1031,7 @@ async fn chat_turn(
     // Execute SQL if present, with one automatic retry on DuckDB execution errors.
     // Retry is skipped for validation errors (blocked keywords / bad prefix) and
     // when no SQL was generated.
-    let (geojson, row_count, result_rows, retry_attempted, final_sql) =
+    let (geojson, row_count, total_count, result_rows, retry_attempted, final_sql) =
         if let Some(ref sql_str) = sql {
             debug!(sql = %sql_str, "chat_turn: executing analysis SQL");
             match spatia_engine::execute_analysis_sql_to_geojson(db_path(), sql_str) {
@@ -1046,6 +1048,7 @@ async fn chat_turn(
                     (
                         Some(engine_result.geojson),
                         Some(engine_result.row_count),
+                        Some(engine_result.total_count),
                         Some(tabular),
                         false,
                         sql.clone(),
@@ -1144,6 +1147,7 @@ async fn chat_turn(
                             (
                                 Some(engine_result.geojson),
                                 Some(engine_result.row_count),
+                                Some(engine_result.total_count),
                                 Some(tabular),
                                 true,
                                 Some(retry_sql),
@@ -1173,7 +1177,7 @@ async fn chat_turn(
                 }
             }
         } else {
-            (None, None, None, false, sql.clone())
+            (None, None, None, None, false, sql.clone())
         };
 
     // Validate the AI's visualization choice against the actual data. Only run
@@ -1194,6 +1198,7 @@ async fn chat_turn(
         geojson,
         map_actions,
         row_count,
+        total_count,
         result_rows,
         visualization_type: validated_visualization_type,
         retry_attempted,
@@ -1209,6 +1214,76 @@ fn get_log_path() -> Result<String, String> {
         .get()
         .cloned()
         .unwrap_or_else(|| "logs/spatia.log".to_string()))
+}
+
+// ---- Export commands ----
+
+#[tauri::command]
+fn export_table_csv(table_name: String, file_path: String) -> Result<(), String> {
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    spatia_engine::export_table_csv(&conn, &table_name, &file_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn export_analysis_geojson(file_path: String) -> Result<(), String> {
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    spatia_engine::export_analysis_geojson(&conn, &file_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_file(file_path: String, data: String) -> Result<(), String> {
+    // Strip data URL prefix if present
+    let b64 = data
+        .strip_prefix("data:image/png;base64,")
+        .unwrap_or(&data);
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&file_path, bytes).map_err(|e| e.to_string())
+}
+
+// ---- Settings / API key management ----
+
+#[tauri::command]
+fn save_api_key(app: tauri::AppHandle, key_name: String, key_value: String) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set(&key_name, serde_json::json!(key_value));
+    // Also update the process env var so the current session picks up the key
+    let env_name = match key_name.as_str() {
+        "gemini_api_key" => Some("SPATIA_GEMINI_API_KEY"),
+        "geocodio_api_key" => Some("SPATIA_GEOCODIO_API_KEY"),
+        _ => None,
+    };
+    if let Some(name) = env_name {
+        std::env::set_var(name, &key_value);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_api_key(app: tauri::AppHandle, key_name: String) -> Result<Option<String>, String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let val = store.get(&key_name).and_then(|v| v.as_str().map(|s| s.to_string()));
+    Ok(val)
+}
+
+#[tauri::command]
+fn delete_api_key(app: tauri::AppHandle, key_name: String) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let _ = store.delete(&key_name);
+    let env_name = match key_name.as_str() {
+        "gemini_api_key" => Some("SPATIA_GEMINI_API_KEY"),
+        "geocodio_api_key" => Some("SPATIA_GEOCODIO_API_KEY"),
+        _ => None,
+    };
+    if let Some(name) = env_name {
+        std::env::remove_var(name);
+    }
+    Ok(())
 }
 
 // ---- API config check ----
@@ -1334,6 +1409,30 @@ pub fn run() {
                 info!(db_path = %db.display(), "spatia: resolved DuckDB path");
             }
 
+            // Inject stored API keys into env vars (if not already set)
+            {
+                use tauri_plugin_store::StoreExt;
+                if let Ok(store) = app.store("settings.json") {
+                    let keys = [
+                        ("gemini_api_key", "SPATIA_GEMINI_API_KEY"),
+                        ("geocodio_api_key", "SPATIA_GEOCODIO_API_KEY"),
+                    ];
+                    for (store_key, env_key) in keys {
+                        let env_present = std::env::var(env_key)
+                            .map(|v| !v.trim().is_empty())
+                            .unwrap_or(false);
+                        if !env_present {
+                            if let Some(val) = store.get(store_key).and_then(|v| v.as_str().map(|s| s.to_string())) {
+                                if !val.trim().is_empty() {
+                                    std::env::set_var(env_key, &val);
+                                    info!(key = %env_key, "spatia: loaded API key from store");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Resolve the active domain pack from SPATIA_DOMAIN_PACK env var.
             let pack = spatia_engine::DomainPack::from_env();
             info!(domain_pack = %pack.id, "spatia: active domain pack");
@@ -1343,6 +1442,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler({
             // `write_debug_snapshot` is only compiled in debug builds.
             // We select the handler list at compile time to keep the release
@@ -1369,6 +1469,12 @@ pub fn run() {
                     check_api_config,
                     get_log_path,
                     get_domain_pack_config,
+                    export_table_csv,
+                    export_analysis_geojson,
+                    save_file,
+                    save_api_key,
+                    get_api_key,
+                    delete_api_key,
                     write_debug_snapshot
                 ]
             }
@@ -1393,7 +1499,13 @@ pub fn run() {
                     chat_turn,
                     check_api_config,
                     get_log_path,
-                    get_domain_pack_config
+                    get_domain_pack_config,
+                    export_table_csv,
+                    export_analysis_geojson,
+                    save_file,
+                    save_api_key,
+                    get_api_key,
+                    delete_api_key
                 ]
             }
         })

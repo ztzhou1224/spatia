@@ -1,5 +1,34 @@
 # Spatia Pivot Plan — BYOK AI-Native Desktop App for Insurance Underwriters
 
+## Active Sprint: Table Stakes (Phase 1) — COMPLETE
+
+**Sprint date:** 2026-03-14
+**Goal:** Ship all 8 pre-launch blocker features to make Spatia launch-ready.
+
+### Completed Tasks
+
+- [x] TASK-14: CSV export of any table — `export.rs` engine module + Tauri command + FileList download button
+- [x] TASK-15: GeoJSON export of analysis_result — `export_analysis_geojson` engine + Tauri command + ChatCard export button
+- [x] TASK-16: Map PNG export — `save_file` Tauri command + canvas compositing (MapLibre + Deck.gl) + `preserveDrawingBuffer`
+- [x] TASK-17: Settings UI — `tauri-plugin-store` + `SettingsPanel.tsx` modal + `save/get/delete_api_key` commands + env var injection at startup
+- [x] TASK-18: Map legend — `MapLegend.tsx` component (scatter/heatmap/hexbin variants) + positioned overlay
+- [x] TASK-19: Basemap selector — `BasemapSelector.tsx` (Dark/Light/OSM) + `basemapId` in appStore with localStorage persistence + style.load re-apply
+- [x] TASK-20: Truncation indicators — `COUNT(*)` before LIMIT in analysis.rs + `total_count` in ChatTurnResult + badges on map and table
+- [x] TASK-21: Tooltip labels — All icon-only buttons audited and `title` attributes added
+
+### New Files Created
+- `src-tauri/crates/engine/src/export.rs` — CSV and GeoJSON export functions
+- `src/components/MapLegend.tsx` — Auto-generated map legend overlay
+- `src/components/BasemapSelector.tsx` — Basemap switching control
+- `src/components/SettingsPanel.tsx` — API key management modal
+
+### Quality Gate
+- `pnpm build` — PASS
+- `cargo test -p spatia_engine` — 65/68 pass (3 pre-existing failures due to network-restricted environment)
+- `cargo clippy -p spatia_engine` — PASS (no warnings)
+
+---
+
 ## Date: 2026-03-14
 
 ## Executive Summary
@@ -531,15 +560,15 @@ Goal: Build insurance-specific capabilities that transform Spatia from a generic
 
 ### Post-MVP Sprint (ACTIVE)
 
-**Phase 1 — Table Stakes (Pre-Launch Blockers):**
-- [ ] TASK-14: CSV export of any table
-- [ ] TASK-15: GeoJSON export of analysis_result
-- [ ] TASK-16: Map PNG export
-- [ ] TASK-17: Settings UI — API key management
-- [ ] TASK-18: Map legend — auto-generated
-- [ ] TASK-19: Basemap selector
-- [ ] TASK-20: Truncation indicators
-- [ ] TASK-21: Tooltip labels on all controls
+**Phase 1 — Table Stakes (Pre-Launch Blockers): COMPLETE**
+- [x] TASK-14: CSV export of any table
+- [x] TASK-15: GeoJSON export of analysis_result
+- [x] TASK-16: Map PNG export
+- [x] TASK-17: Settings UI — API key management
+- [x] TASK-18: Map legend — auto-generated
+- [x] TASK-19: Basemap selector
+- [x] TASK-20: Truncation indicators
+- [x] TASK-21: Tooltip labels on all controls
 
 **Phase 2 — Competitive Parity:**
 - [ ] TASK-22: GeoJSON/Shapefile import

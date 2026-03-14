@@ -20,6 +20,7 @@ pub struct TabularResult {
 pub struct AnalysisExecutionResult {
     pub status: &'static str,
     pub row_count: usize,
+    pub total_count: usize,
     pub geojson: Value,
     pub tabular: TabularResult,
 }
@@ -108,6 +109,16 @@ fn read_analysis_result(conn: &Connection) -> EngineResult<AnalysisExecutionResu
         .collect::<Vec<_>>()
         .join(", ");
 
+    // --- Total count (before truncation) ---
+    let total_count: usize = {
+        let mut count_stmt = conn.prepare("SELECT COUNT(*) FROM analysis_result")?;
+        let mut count_rows = count_stmt.query([])?;
+        match count_rows.next()? {
+            Some(row) => row.get::<_, i64>(0).unwrap_or(0) as usize,
+            None => 0,
+        }
+    };
+
     // --- GeoJSON pass (up to 1000 rows) ---
     let mut stmt = conn.prepare(&format!(
         "SELECT {cast_select} FROM analysis_result LIMIT 1000"
@@ -177,10 +188,11 @@ fn read_analysis_result(conn: &Connection) -> EngineResult<AnalysisExecutionResu
         truncated,
     };
 
-    info!(row_count = features.len(), "execute_analysis_sql: completed successfully");
+    info!(row_count = features.len(), total_count = total_count, "execute_analysis_sql: completed successfully");
     Ok(AnalysisExecutionResult {
         status: "ok",
         row_count: features.len(),
+        total_count,
         geojson: json!({
             "type": "FeatureCollection",
             "features": features,

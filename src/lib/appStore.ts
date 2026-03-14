@@ -103,6 +103,9 @@ type AppStore = {
   logPath: string | null;
   activeWidget: ActiveWidget | null;
   domainConfig: DomainPackConfig;
+  basemapId: string;
+  settingsOpen: boolean;
+  analysisTotalCount: number | null;
 
   addTable: (table: TableInfo) => void;
   updateTable: (name: string, patch: Partial<TableInfo>) => void;
@@ -124,6 +127,9 @@ type AppStore = {
   selectAllTablesForChat: () => void;
   deselectAllTablesForChat: () => void;
   fetchDomainConfig: () => Promise<void>;
+  setBasemapId: (id: string) => void;
+  setSettingsOpen: (open: boolean) => void;
+  setAnalysisTotalCount: (count: number | null) => void;
 };
 
 const storeInitializer: StateCreator<AppStore> = (set) => ({
@@ -139,6 +145,9 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   selectedTablesForChat: new Set<string>(),
   activeWidget: null,
   domainConfig: DEFAULT_DOMAIN_CONFIG,
+  basemapId: (typeof localStorage !== "undefined" ? localStorage.getItem("basemapId") : null) ?? "dark",
+  settingsOpen: false,
+  analysisTotalCount: null,
 
   addTable: (table) =>
     set((state) => ({ tables: [...state.tables, table] })),
@@ -184,7 +193,7 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
       };
     }),
   clearMessages: () =>
-    set({ chatMessages: [], analysisGeoJson: { type: "FeatureCollection", features: [] }, visualizationType: "scatter" }),
+    set({ chatMessages: [], analysisGeoJson: { type: "FeatureCollection", features: [] }, visualizationType: "scatter", analysisTotalCount: null }),
   setIsProcessing: (value) => set({ isProcessing: value }),
   setAnalysisGeoJson: (geojson) => set({ analysisGeoJson: geojson }),
   setVisualizationType: (type) => set({ visualizationType: type }),
@@ -251,6 +260,12 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
       // Non-fatal — keep default config
     }
   },
+  setBasemapId: (id) => {
+    if (typeof localStorage !== "undefined") localStorage.setItem("basemapId", id);
+    set({ basemapId: id });
+  },
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setAnalysisTotalCount: (count) => set({ analysisTotalCount: count }),
 });
 
 export const useAppStore = create<AppStore>(storeInitializer);

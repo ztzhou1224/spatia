@@ -2,6 +2,7 @@ mod analysis;
 mod db_manager;
 pub mod domain_pack;
 mod executor;
+mod export;
 mod identifiers;
 mod ingest;
 mod overture;
@@ -36,5 +37,6 @@ pub use domain_pack::{
     detect_domain_columns, format_domain_column_annotations, ColumnDetectionRule, DomainPack,
     UiConfig,
 };
+pub use export::{export_analysis_geojson, export_table_csv};
 pub use identifiers::validate_table_name;
 pub use types::EngineResult;

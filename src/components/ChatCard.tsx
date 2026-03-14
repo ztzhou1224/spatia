@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,7 @@ function toWidgetType(vizType: string): WidgetType | null {
   }
 }
 
-function ResultTable({ resultRows }: { resultRows: ResultRows }) {
+function ResultTable({ resultRows, totalCount }: { resultRows: ResultRows; totalCount?: number | null }) {
   const { columns, rows, truncated } = resultRows;
   if (columns.length === 0) return null;
 
@@ -75,7 +76,9 @@ function ResultTable({ resultRows }: { resultRows: ResultRows }) {
       </div>
       {truncated && (
         <p className="text-xs text-muted-foreground mt-1">
-          Showing first 20 rows only.
+          {totalCount != null
+            ? `Showing ${rows.length} of ${totalCount.toLocaleString()} rows`
+            : "Showing first 20 rows only."}
         </p>
       )}
     </div>
@@ -101,6 +104,8 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
   const activeWidget = useAppStore((s) => s.activeWidget);
   const setActiveWidget = useAppStore((s) => s.setActiveWidget);
   const domainConfig = useAppStore((s) => s.domainConfig);
+  const analysisGeoJson = useAppStore((s) => s.analysisGeoJson);
+  const setAnalysisTotalCount = useAppStore((s) => s.setAnalysisTotalCount);
 
   const tableNames = Array.from(selectedTablesForChat).sort();
 
@@ -141,6 +146,7 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
         geojson?: unknown;
         map_actions: unknown[];
         row_count?: number;
+        total_count?: number;
         result_rows?: ResultRows;
         visualization_type?: string;
         retry_attempted?: boolean;
@@ -175,6 +181,9 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
         });
       }
 
+      // Propagate total count for truncation indicators
+      setAnalysisTotalCount(result.total_count ?? null);
+
       if (result.geojson && MAP_VIZ_TYPES.has(vizType)) {
         setAnalysisGeoJson(result.geojson);
         setVisualizationType(vizType);
@@ -197,6 +206,21 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
     setLoading(false);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }
+
+  async function handleExportGeoJson() {
+    if (!isTauri()) return;
+    try {
+      const filePath = await save({
+        defaultPath: "analysis_result.geojson",
+        filters: [{ name: "GeoJSON", extensions: ["geojson"] }],
+      });
+      if (filePath) {
+        await invoke("export_analysis_geojson", { filePath });
+      }
+    } catch { /* ignore */ }
+  }
+
+  const hasAnalysisFeatures = ((analysisGeoJson as { features?: unknown[] })?.features ?? []).length > 0;
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -294,7 +318,7 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
                 )}
                 {/* Show inline table only when resultRows is attached to the message */}
                 {msg.resultRows && msg.resultRows.columns.length > 0 ? (
-                  <ResultTable resultRows={msg.resultRows} />
+                  <ResultTable resultRows={msg.resultRows} totalCount={useAppStore.getState().analysisTotalCount} />
                 ) : msg.rowCount != null ? (
                   <p className="text-xs text-muted-foreground">
                     {msg.rowCount} row(s) returned
@@ -358,6 +382,7 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
             size="icon"
             onClick={() => void handleSend()}
             disabled={!input.trim() || tableNames.length === 0}
+            title="Send message"
             className="w-8 h-8 shrink-0"
           >
             {/* Arrow-up send icon */}
@@ -375,6 +400,18 @@ export function ChatCard({ mapViewRef, panelWidth = 300 }: Props) {
             {/* Chevron-down icon */}
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+        {isTauri() && hasAnalysisFeatures && (
+          <button
+            onClick={() => void handleExportGeoJson()}
+            title="Export GeoJSON"
+            className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
+          >
+            {/* Download icon */}
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M7 1.5v8M7 9.5l-3-3M7 9.5l3-3M2 11.5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         )}
