@@ -48,8 +48,12 @@ bash src-tauri/scripts/build_overture_pmtiles.sh ./src-tauri/spatia.duckdb place
 - **Map**: MapLibre GL + PMTiles vector tiles + Deck.gl overlays
 - **Desktop shell**: Tauri v2 (command bridge between React and Rust)
 - **Rust workspace** (`src-tauri/`):
-  - `spatia_engine` — data engine (DuckDB, geocoding, Overture, analysis, SQL safety)
+  - `spatia_geocode` — geocoding logic (batch, cache, Geocodio, fuzzy search, scoring)
+  - `spatia_ingest` — CSV data ingestion
+  - `spatia_overture` — Overture Maps extract, search, and geocode
   - `spatia_ai` — Gemini client, prompt builders, data-cleaning orchestration (feature-gated via `gemini`)
+  - `spatia_engine` — orchestration layer (analysis, schema, export, executor); re-exports geocode/ingest/overture APIs
+  - `spatia_bench` — benchmarks for all modules (AI analysis + geocoding)
   - `spatia_cli` — CLI wrapper over `spatia_engine`'s executor
 - **Database**: DuckDB 1.4.4 with `spatial` and `httpfs` extensions; fixed path `src-tauri/spatia.duckdb`
 

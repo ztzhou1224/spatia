@@ -7,9 +7,23 @@ edition = "2021"
 name = "spatia_bench"
 path = "src/main.rs"
 
+[[bin]]
+name = "spatia_geocode_bench"
+path = "src/bin/spatia_geocode_bench.rs"
+
+[[bin]]
+name = "seed_fuzzy_bench"
+path = "src/bin/seed_fuzzy_bench.rs"
+
+[[bin]]
+name = "gen_fuzzy_variations"
+path = "src/bin/gen_fuzzy_variations.rs"
+
 [dependencies]
 spatia_engine = { path = "../engine" }
 spatia_ai = { path = "../ai", features = ["gemini"] }
+spatia_geocode = { path = "../geocode" }
+duckdb = { version = "1.4.4", features = ["bundled"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -18,3 +32,5 @@ clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+csv = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
