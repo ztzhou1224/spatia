@@ -73,6 +73,7 @@ function isActive(status: TableInfo["status"]): boolean {
 function GeocodeStatsSummary({ stats }: { stats: GeocodeStats }) {
   const parts: string[] = [];
   if (stats.by_source.cache > 0) parts.push(`${stats.by_source.cache} cached`);
+  if (stats.by_source.overture_exact > 0) parts.push(`${stats.by_source.overture_exact} exact`);
   if (stats.by_source.overture_fuzzy > 0) parts.push(`${stats.by_source.overture_fuzzy} local match`);
   if (stats.by_source.geocodio > 0) parts.push(`${stats.by_source.geocodio} via API`);
   if (stats.unresolved > 0) parts.push(`${stats.unresolved} unresolved`);
@@ -306,6 +307,12 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
     const col = geocodeColRef.current[table.name] ?? table.addressColumns[0];
     if (!col) return;
 
+    // Auto-detect city/state/zip component columns from detected address columns
+    const otherCols = table.addressColumns.filter((c) => c !== col);
+    const cityCol = otherCols.find((c) => /^city$/i.test(c));
+    const stateCol = otherCols.find((c) => /^state$/i.test(c));
+    const zipCol = otherCols.find((c) => /^(zip|postal|postcode|zip_?code|postal_?code)$/i.test(c));
+
     updateTable(table.name, {
       status: "geocoding",
       progressMessage: "Geocoding...",
@@ -316,12 +323,15 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
       const raw = await invoke<string>("geocode_table_column", {
         tableName: table.name,
         addressCol: col,
+        cityCol: cityCol ?? null,
+        stateCol: stateCol ?? null,
+        zipCol: zipCol ?? null,
       });
       const geocodeResult = JSON.parse(raw) as {
         status: string;
         geocoded_count: number;
         total_addresses: number;
-        by_source?: { cache: number; overture_fuzzy: number; geocodio: number };
+        by_source?: { cache: number; overture_exact: number; overture_fuzzy: number; geocodio: number };
         unresolved?: number;
       };
       const geocodeStats: GeocodeStats | undefined = geocodeResult.by_source

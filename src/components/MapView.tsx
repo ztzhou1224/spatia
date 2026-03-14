@@ -74,6 +74,10 @@ const ANALYSIS_LAYER_ID = "analysis-result-circles";
 const ANALYSIS_FILL_LAYER_ID = "analysis-result-fill";
 const ANALYSIS_LINE_LAYER_ID = "analysis-result-line";
 
+const BUILDINGS_SOURCE_ID = "buildings-3d";
+const BUILDINGS_LAYER_ID = "buildings-3d-layer";
+const BUILDINGS_MIN_ZOOM = 14;
+
 // Blue color for table data points (distinct from purple analysis results)
 const TABLE_POINT_COLOR: [number, number, number, number] = [37, 99, 235, 200];
 
@@ -92,6 +96,8 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
   const basemapId = useAppStore((s) => s.basemapId);
   const analysisTotalCount = useAppStore((s) => s.analysisTotalCount);
   const [exporting, setExporting] = useState(false);
+  const buildingsFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastBuildingsBboxRef = useRef<string | null>(null);
 
   // Show welcome overlay when there are no tables and no analysis results
   const analysisFeatures = (analysisGeoJson as { features?: unknown[] })?.features ?? [];
@@ -218,6 +224,87 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     });
   }, []);
 
+  // Add buildings GeoJSON source and fill-extrusion layer (idempotent)
+  const setupBuildingsLayer = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!map.getSource(BUILDINGS_SOURCE_ID)) {
+      map.addSource(BUILDINGS_SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+    }
+
+    if (!map.getLayer(BUILDINGS_LAYER_ID)) {
+      map.addLayer({
+        id: BUILDINGS_LAYER_ID,
+        type: "fill-extrusion",
+        source: BUILDINGS_SOURCE_ID,
+        minzoom: BUILDINGS_MIN_ZOOM,
+        paint: {
+          "fill-extrusion-color": "#ddd",
+          "fill-extrusion-height": [
+            "coalesce",
+            ["*", ["get", "num_floors"], 3.5],
+            ["get", "height"],
+            10,
+          ],
+          "fill-extrusion-base": 0,
+          "fill-extrusion-opacity": 0.6,
+        },
+      });
+    }
+  }, []);
+
+  // Fetch buildings for the current viewport and update the source
+  const fetchBuildings = useCallback(async (map: maplibregl.Map) => {
+    if (!isTauri()) return;
+
+    const zoom = map.getZoom();
+    if (zoom < BUILDINGS_MIN_ZOOM) {
+      // Clear buildings data when zoomed out
+      const src = map.getSource(BUILDINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData({ type: "FeatureCollection", features: [] });
+        lastBuildingsBboxRef.current = null;
+      }
+      return;
+    }
+
+    const bounds = map.getBounds();
+    const bboxStr = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+
+    // Skip fetch if viewport hasn't changed significantly (same bbox string)
+    if (bboxStr === lastBuildingsBboxRef.current) return;
+    lastBuildingsBboxRef.current = bboxStr;
+
+    try {
+      const raw = await invoke<string>("fetch_buildings_in_view", { bboxStr });
+      const geojson = JSON.parse(raw) as GeoJSON.FeatureCollection;
+      const src = map.getSource(BUILDINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData(geojson);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch buildings:", e);
+    }
+  }, []);
+
+  // Debounced idle handler — schedules fetchBuildings 400 ms after the last idle event
+  const debouncedFetchBuildings = useCallback(
+    (map: maplibregl.Map) => {
+      if (buildingsFetchTimerRef.current !== null) {
+        clearTimeout(buildingsFetchTimerRef.current);
+      }
+      buildingsFetchTimerRef.current = setTimeout(() => {
+        buildingsFetchTimerRef.current = null;
+        void fetchBuildings(map);
+      }, 400);
+    },
+    [fetchBuildings]
+  );
+
   // Initialize map once
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
@@ -245,7 +332,21 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     });
     mapRef.current.addControl(deckOverlayRef.current);
 
+    // Set up buildings layer and idle-based fetching after style loads
+    const map = mapRef.current;
+    map.on("load", () => {
+      setupBuildingsLayer();
+    });
+
+    const idleHandler = () => debouncedFetchBuildings(map);
+    map.on("idle", idleHandler);
+
     return () => {
+      if (buildingsFetchTimerRef.current !== null) {
+        clearTimeout(buildingsFetchTimerRef.current);
+        buildingsFetchTimerRef.current = null;
+      }
+      map.off("idle", idleHandler);
       if (deckOverlayRef.current) {
         mapRef.current?.removeControl(deckOverlayRef.current);
         deckOverlayRef.current = null;
@@ -269,10 +370,13 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
 
     map.setStyle(newStyle);
     map.once("style.load", () => {
-      // Re-apply analysis layers after style change
+      // Re-apply analysis layers and buildings layer after style change
+      setupBuildingsLayer();
+      // Reset bbox cache so buildings are re-fetched with the new style
+      lastBuildingsBboxRef.current = null;
       applyAnalysisLayer();
     });
-  }, [basemapId, applyAnalysisLayer]);
+  }, [basemapId, applyAnalysisLayer, setupBuildingsLayer]);
 
   // Update analysis GeoJSON layers
   useEffect(() => {

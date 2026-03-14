@@ -7,6 +7,7 @@ export type GeocodeStats = {
   geocoded: number;
   by_source: {
     cache: number;
+    overture_exact: number;
     overture_fuzzy: number;
     geocodio: number;
   };

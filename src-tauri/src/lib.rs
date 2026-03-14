@@ -236,7 +236,7 @@ fn detect_address_columns(table_name: String) -> Result<String, String> {
             ["address", "addr", "street", "location", "place"]
                 .iter()
                 .any(|p| name.contains(p))
-                || ["city", "zip", "postal", "suburb", "neighbourhood"]
+                || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
                     .contains(&name.as_str())
         })
         .map(|col| col.name)
@@ -277,8 +277,18 @@ async fn geocode_table_column(
     app: tauri::AppHandle,
     table_name: String,
     address_col: String,
+    city_col: Option<String>,
+    state_col: Option<String>,
+    zip_col: Option<String>,
 ) -> Result<String, String> {
-    info!(table = %table_name, col = %address_col, "geocode_table_column: starting");
+    info!(
+        table = %table_name,
+        col = %address_col,
+        city_col = city_col.as_deref().unwrap_or(""),
+        state_col = state_col.as_deref().unwrap_or(""),
+        zip_col = zip_col.as_deref().unwrap_or(""),
+        "geocode_table_column: starting"
+    );
     spatia_engine::validate_table_name(&table_name).map_err(|e| e.to_string())?;
 
     // Column names must not contain double-quotes (which would break our quoting)
@@ -286,30 +296,83 @@ async fn geocode_table_column(
         error!(col = %address_col, "geocode_table_column: invalid address column name");
         return Err("invalid address column name".to_string());
     }
+    for opt_col in [city_col.as_deref(), state_col.as_deref(), zip_col.as_deref()]
+        .iter()
+        .flatten()
+    {
+        if opt_col.contains('"') {
+            return Err(format!("invalid column name: {opt_col}"));
+        }
+    }
+
+    let have_components = city_col.is_some() || state_col.is_some() || zip_col.is_some();
 
     emit_geocode_progress(&app, "extracting", "Extracting unique addresses...", 0)?;
 
-    // Extract distinct non-null addresses (block-scoped so the connection closes before geocode_batch)
-    let addresses: Vec<String> = {
+    // Extract per-row address components when component columns are available,
+    // or fall back to distinct address strings for the simple case.
+    let components: Vec<spatia_engine::AddressComponents> = {
         let conn =
             duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
-        let sql = format!(
-            r#"SELECT DISTINCT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL"#,
-            col = address_col,
-            table = table_name,
-        );
-        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let mut rows = stmt
-            .query([])
-            .map_err(|e| e.to_string())?;
-        let mut out: Vec<String> = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            out.push(row.get::<_, String>(0).map_err(|e| e.to_string())?);
+
+        if have_components {
+            // Build a SELECT that includes the optional component columns.
+            // We use COALESCE(..., '') to avoid NULLs breaking the construction.
+            let city_expr = city_col.as_deref()
+                .map(|c| format!(r#"COALESCE(CAST("{c}" AS VARCHAR), '')"#))
+                .unwrap_or_else(|| "''".to_string());
+            let state_expr = state_col.as_deref()
+                .map(|c| format!(r#"COALESCE(CAST("{c}" AS VARCHAR), '')"#))
+                .unwrap_or_else(|| "''".to_string());
+            let zip_expr = zip_col.as_deref()
+                .map(|c| format!(r#"COALESCE(CAST("{c}" AS VARCHAR), '')"#))
+                .unwrap_or_else(|| "''".to_string());
+
+            let sql = format!(
+                r#"SELECT DISTINCT "{col}", {city}, {state}, {zip}
+                   FROM "{table}"
+                   WHERE "{col}" IS NOT NULL"#,
+                col = address_col,
+                city = city_expr,
+                state = state_expr,
+                zip = zip_expr,
+                table = table_name,
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+            let mut out: Vec<spatia_engine::AddressComponents> = Vec::new();
+            while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+                let street: String = row.get(0).map_err(|e| e.to_string())?;
+                let city_val: String = row.get(1).map_err(|e| e.to_string())?;
+                let state_val: String = row.get(2).map_err(|e| e.to_string())?;
+                let zip_val: String = row.get(3).map_err(|e| e.to_string())?;
+                out.push(spatia_engine::components_from_columns(
+                    &street,
+                    if city_val.is_empty() { None } else { Some(city_val.as_str()) },
+                    if state_val.is_empty() { None } else { Some(state_val.as_str()) },
+                    if zip_val.is_empty() { None } else { Some(zip_val.as_str()) },
+                ));
+            }
+            out
+        } else {
+            // Simple path: distinct non-null addresses → parse as free-text
+            let sql = format!(
+                r#"SELECT DISTINCT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL"#,
+                col = address_col,
+                table = table_name,
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+            let mut out: Vec<spatia_engine::AddressComponents> = Vec::new();
+            while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+                let addr: String = row.get(0).map_err(|e| e.to_string())?;
+                out.push(spatia_engine::components_from_string(&addr));
+            }
+            out
         }
-        out
     };
 
-    let total_addresses = addresses.len();
+    let total_addresses = components.len();
     emit_geocode_progress(
         &app,
         "geocoding",
@@ -317,9 +380,10 @@ async fn geocode_table_column(
         20,
     )?;
 
-    // geocode_batch opens and closes its own connection
+    // geocode_batch_with_components opens and closes its own connection
     let (results, geocode_stats) =
-        spatia_engine::geocode_batch(db_path(), &addresses).map_err(|e| e.to_string())?;
+        spatia_engine::geocode_batch_with_components(db_path(), &components)
+            .map_err(|e| e.to_string())?;
     let geocoded_count = results.len();
 
     info!(
@@ -328,6 +392,7 @@ async fn geocode_table_column(
         total = geocode_stats.total,
         geocoded = geocode_stats.geocoded,
         cache_hits = geocode_stats.cache_hits,
+        overture_exact = geocode_stats.overture_exact,
         local_fuzzy = geocode_stats.local_fuzzy,
         api_resolved = geocode_stats.api_resolved,
         unresolved = geocode_stats.unresolved,
@@ -345,7 +410,7 @@ async fn geocode_table_column(
         let conn =
             duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
 
-        // Add geocode columns if not already present
+        // Add geocode columns if not already present (including _gers_id)
         for alter_sql in [
             format!(
                 r#"ALTER TABLE "{}" ADD COLUMN IF NOT EXISTS _lat DOUBLE"#,
@@ -363,35 +428,45 @@ async fn geocode_table_column(
                 r#"ALTER TABLE "{}" ADD COLUMN IF NOT EXISTS _geocode_confidence DOUBLE"#,
                 table_name
             ),
+            format!(
+                r#"ALTER TABLE "{}" ADD COLUMN IF NOT EXISTS _gers_id VARCHAR"#,
+                table_name
+            ),
         ] {
             conn.execute_batch(&alter_sql).map_err(|e| e.to_string())?;
         }
 
-        // Build VALUES list for a temp staging table
+        // Build VALUES list for a temp staging table (includes gers_id)
         let values: Vec<String> = results
             .iter()
             .map(|r| {
+                let gers_sql = match r.gers_id.as_deref() {
+                    Some(g) => format!("'{}'", g.replace('\'', "''")),
+                    None => "NULL".to_string(),
+                };
                 format!(
-                    "('{}', {}, {}, '{}', {})",
+                    "('{}', {}, {}, '{}', {}, {})",
                     r.address.replace('\'', "''"),
                     r.lat,
                     r.lon,
                     r.source.replace('\'', "''"),
                     r.confidence,
+                    gers_sql,
                 )
             })
             .collect();
 
         conn.execute_batch(&format!(
             "CREATE OR REPLACE TEMP TABLE _gc AS \
-             SELECT * FROM (VALUES {}) AS t(address, lat, lon, source, confidence)",
+             SELECT * FROM (VALUES {}) AS t(address, lat, lon, source, confidence, gers_id)",
             values.join(", "),
         ))
         .map_err(|e| e.to_string())?;
 
         conn.execute_batch(&format!(
             r#"UPDATE "{table}" SET _lat = g.lat, _lon = g.lon,
-               _geocode_source = g.source, _geocode_confidence = g.confidence
+               _geocode_source = g.source, _geocode_confidence = g.confidence,
+               _gers_id = g.gers_id
                FROM _gc g WHERE "{table}"."{col}" = g.address"#,
             table = table_name,
             col = address_col,
@@ -412,6 +487,7 @@ async fn geocode_table_column(
         "total_addresses": total_addresses,
         "by_source": {
             "cache": geocode_stats.cache_hits,
+            "overture_exact": geocode_stats.overture_exact,
             "overture_fuzzy": geocode_stats.local_fuzzy,
             "geocodio": geocode_stats.api_resolved,
         },
@@ -518,6 +594,21 @@ fn drop_table(table_name: String) -> Result<String, String> {
 
     let json = serde_json::json!({ "status": "ok", "table": table_name });
     serde_json::to_string(&json).map_err(|e| e.to_string())
+}
+
+// ---- Building footprints ----
+
+#[tauri::command]
+async fn fetch_buildings_in_view(bbox_str: String) -> Result<String, String> {
+    let bbox = spatia_engine::BBox::parse(&bbox_str).map_err(|e| e.to_string())?;
+    spatia_engine::fetch_buildings_in_bbox(
+        db_path(),
+        bbox.xmin,
+        bbox.ymin,
+        bbox.xmax,
+        bbox.ymax,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // ---- Analysis commands ----
@@ -787,7 +878,7 @@ async fn ingest_file_pipeline(
                 ["address", "addr", "street", "location", "place"]
                     .iter()
                     .any(|p| name.contains(p))
-                    || ["city", "zip", "postal", "suburb", "neighbourhood"]
+                    || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
                         .contains(&name.as_str())
             })
             .map(|col| col.name)
@@ -1461,6 +1552,7 @@ pub fn run() {
                     geocode_table_column,
                     drop_table,
                     table_to_geojson,
+                    fetch_buildings_in_view,
                     analysis_chat,
                     generate_analysis_sql,
                     execute_analysis_sql,
@@ -1492,6 +1584,7 @@ pub fn run() {
                     geocode_table_column,
                     drop_table,
                     table_to_geojson,
+                    fetch_buildings_in_view,
                     analysis_chat,
                     generate_analysis_sql,
                     execute_analysis_sql,

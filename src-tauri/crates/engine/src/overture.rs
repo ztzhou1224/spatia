@@ -366,6 +366,116 @@ fn lookup_table_name(base_table: &str) -> String {
     format!("{base_table}_lookup")
 }
 
+/// Download Overture building footprints within a bounding box and cache in DuckDB.
+/// Returns a GeoJSON FeatureCollection as a String.
+pub fn fetch_buildings_in_bbox(
+    db_path: &str,
+    xmin: f64,
+    ymin: f64,
+    xmax: f64,
+    ymax: f64,
+) -> EngineResult<String> {
+    let conn = Connection::open(db_path)?;
+    ensure_extensions(&conn)?;
+
+    // Create cache table if it doesn't exist
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS overture_buildings_cache (
+            gers_id VARCHAR PRIMARY KEY,
+            height DOUBLE,
+            num_floors INTEGER,
+            geometry VARCHAR
+        )",
+    )?;
+
+    // Check if buildings in this bbox are already cached
+    let cached_count: i64 = {
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(*) FROM overture_buildings_cache \
+             WHERE geometry IS NOT NULL \
+             AND ST_Intersects(ST_GeomFromText(geometry), ST_MakeEnvelope(?, ?, ?, ?))",
+        )?;
+        stmt.query_row(
+            duckdb::params![xmin, ymin, xmax, ymax],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
+    };
+
+    if cached_count == 0 {
+        // Fetch from Overture S3
+        let release = overture_release();
+        let source_path = format!(
+            "s3://overturemaps-us-west-2/release/{}/theme=buildings/type=building/*",
+            release
+        );
+        let insert_sql = format!(
+            "INSERT OR IGNORE INTO overture_buildings_cache \
+             SELECT \
+               id AS gers_id, \
+               CAST(height AS DOUBLE) AS height, \
+               CAST(num_floors AS INTEGER) AS num_floors, \
+               ST_AsText(geometry) AS geometry \
+             FROM read_parquet('{source}', hive_partitioning=true) \
+             WHERE bbox.xmin >= {xmin} AND bbox.xmax <= {xmax} \
+               AND bbox.ymin >= {ymin} AND bbox.ymax <= {ymax}",
+            source = source_path,
+            xmin = xmin,
+            xmax = xmax,
+            ymin = ymin,
+            ymax = ymax,
+        );
+        conn.execute_batch(&insert_sql)?;
+    }
+
+    // Query cached buildings within bbox and convert to GeoJSON
+    let mut stmt = conn.prepare(
+        "SELECT gers_id, height, num_floors, geometry \
+         FROM overture_buildings_cache \
+         WHERE geometry IS NOT NULL \
+           AND ST_Intersects(ST_GeomFromText(geometry), ST_MakeEnvelope(?, ?, ?, ?))",
+    )?;
+
+    let mut features: Vec<serde_json::Value> = Vec::new();
+    let mut rows = stmt.query(duckdb::params![xmin, ymin, xmax, ymax])?;
+
+    while let Some(row) = rows.next()? {
+        let gers_id: Option<String> = row.get(0).ok();
+        let height: Option<f64> = row.get(1).ok();
+        let num_floors: Option<i32> = row.get(2).ok();
+        let wkt: String = row.get(3)?;
+
+        // Convert WKT to GeoJSON geometry via DuckDB ST_AsGeoJSON
+        let geom_json: Option<serde_json::Value> = {
+            let mut geom_stmt = conn.prepare(
+                "SELECT ST_AsGeoJSON(ST_GeomFromText(?))",
+            )?;
+            geom_stmt
+                .query_row(duckdb::params![wkt], |r| r.get::<_, String>(0))
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+        };
+
+        if let Some(geometry) = geom_json {
+            features.push(serde_json::json!({
+                "type": "Feature",
+                "geometry": geometry,
+                "properties": {
+                    "gers_id": gers_id,
+                    "height": height,
+                    "num_floors": num_floors,
+                }
+            }));
+        }
+    }
+
+    let fc = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+    });
+    serde_json::to_string(&fc).map_err(|e| e.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

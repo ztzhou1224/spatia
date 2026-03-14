@@ -22,6 +22,9 @@ pub struct GeocodeBatchResult {
     pub confidence: f64,
     pub matched_label: Option<String>,
     pub matched_table: Option<String>,
+    /// Overture GERS ID for linking to building footprints and 3D rendering.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gers_id: Option<String>,
 }
 
 /// Source breakdown stats returned alongside geocoding results.
@@ -30,6 +33,7 @@ pub struct GeocodeStats {
     pub total: usize,
     pub geocoded: usize,
     pub cache_hits: usize,
+    pub overture_exact: usize,
     pub local_fuzzy: usize,
     pub api_resolved: usize,
     pub unresolved: usize,

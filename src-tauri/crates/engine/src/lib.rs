@@ -12,7 +12,8 @@ mod types;
 // Re-export geocode crate's public API for backward compatibility
 pub use spatia_geocode::{
     cache_lookup, cache_store, ensure_cache_table,
-    geocode_addresses, geocode_batch, geocode_via_geocodio,
+    geocode_addresses, geocode_batch, geocode_batch_with_components, geocode_via_geocodio,
+    AddressComponents, components_from_columns, components_from_string, extract_zip,
     GeocodeBatchResult, GeocodeResult, GeocodeStats,
 };
 pub use spatia_geocode::search_index;
@@ -24,6 +25,7 @@ pub use db_manager::DbManager;
 pub use executor::execute_command;
 pub use ingest::ingest_csv;
 pub use ingest::ingest_csv_to_table;
+pub use overture::fetch_buildings_in_bbox;
 pub use overture::overture_extract_to_table;
 pub use overture::overture_geocode;
 pub use overture::overture_search;

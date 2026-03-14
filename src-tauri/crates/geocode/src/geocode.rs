@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use duckdb::Connection;
 use tracing::{debug, error, info, warn};
@@ -6,9 +6,9 @@ use tracing::{debug, error, info, warn};
 use crate::cache::{cache_lookup, cache_store};
 use crate::geocodio::{geocode_via_geocodio_inner, GeocodioEnrichedResult};
 use crate::identifiers::validate_table_name;
+use crate::overture_cache;
 use crate::scoring::{local_accept_threshold, score_candidate, MIN_SCORE};
-use crate::text::normalize_address;
-use crate::text::tokenize_address;
+use crate::text::{normalize_address, tokenize_address, AddressComponents, components_from_string};
 use crate::types::{GeoResult, GeocodeBatchResult, GeocodeResult, GeocodeStats};
 
 #[derive(Debug, Clone)]
@@ -206,6 +206,7 @@ fn tantivy_fuzzy_geocode(
                     confidence: top.score,
                     matched_label: Some(top.label.clone()),
                     matched_table: Some(base_table.clone()),
+                    gers_id: None,
                 },
             ));
         }
@@ -305,6 +306,7 @@ pub fn local_fuzzy_geocode(
                     confidence: score,
                     matched_label: Some(candidate.label),
                     matched_table: Some(candidate.table),
+                    gers_id: None,
                 });
             }
         }
@@ -337,19 +339,53 @@ where
 
 // ---- Main sync entry point ----
 
-/// Geocode `addresses` using a cache-first strategy, falling back to the
-/// Geocodio API for any cache misses, then writing new results to the cache.
+/// Geocode `addresses` using a cache-first, Overture-first strategy,
+/// falling back to the Geocodio API for any cache misses, then writing
+/// new results to the cache.
 ///
-/// Requires `SPATIA_GEOCODIO_API_KEY` to be set when there are cache misses.
+/// This is a convenience wrapper over [`geocode_batch_with_components`]
+/// that parses each address string into [`AddressComponents`] before geocoding.
+///
+/// Requires `SPATIA_GEOCODIO_API_KEY` to be set when there are cache misses
+/// that cannot be resolved locally.
 /// `SPATIA_GEOCODIO_BASE_URL` overrides the API host (useful for testing).
 ///
 /// Returns both the ordered results and a [`GeocodeStats`] breakdown by source.
 pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
+    let components: Vec<AddressComponents> = addresses
+        .iter()
+        .map(|a| components_from_string(a))
+        .collect();
+    geocode_batch_with_components(db_path, &components)
+}
+
+/// Geocode pre-parsed address components using a 3-pass Overture-first strategy.
+///
+/// Pipeline:
+/// 1. Cache lookup — return cached hits immediately.
+/// 2. For cache misses:
+///    a. Extract zip codes; download Overture data for those zips.
+///    b. Try exact Overture match (number + street + postcode).
+///    c. Try fuzzy Overture match for remaining.
+///    d. For unresolved with city/state, try city-level Overture download.
+///    e. For still-unresolved with state only, try state-level Overture download.
+/// 3. Existing local fuzzy geocode (lookup tables) as fallback.
+/// 4. Geocodio API fallback for anything still unresolved.
+/// 5. GERS reverse lookup to attach GERS IDs to Geocodio results.
+///
+/// Returns both the ordered results and a [`GeocodeStats`] breakdown by source.
+pub fn geocode_batch_with_components(
+    db_path: &str,
+    components: &[AddressComponents],
+) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
+    let addresses: Vec<String> = components.iter().map(|c| c.full.clone()).collect();
+
     info!(address_count = addresses.len(), "geocode_batch: starting batch geocode");
 
     let conn = Connection::open(db_path)?;
 
-    let (cached_hits, misses) = cache_lookup(&conn, addresses)?;
+    // ---- Step 1: Cache lookup ----
+    let (cached_hits, misses) = cache_lookup(&conn, &addresses)?;
     let cache_hit_count = cached_hits.len();
     debug!(cache_hits = cache_hit_count, cache_misses = misses.len(), "geocode_batch: cache lookup complete");
 
@@ -366,57 +402,272 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
                 source: result.source,
                 matched_label: None,
                 matched_table: None,
+                gers_id: None,
             },
         );
     }
 
+    let mut overture_exact_count = 0usize;
     let mut local_fuzzy_count = 0usize;
     let mut api_resolved_count = 0usize;
 
     if !misses.is_empty() {
-        info!(miss_count = misses.len(), "geocode_batch: attempting local fuzzy geocode");
-        let local_hits = local_fuzzy_geocode(&conn, &misses, Some(db_path))?;
-        debug!(local_hits = local_hits.len(), "geocode_batch: local fuzzy geocode complete");
+        // Build a lookup from address string → components for the miss set
+        let miss_set: HashSet<&str> = misses.iter().map(String::as_str).collect();
+        let miss_components: Vec<&AddressComponents> = components
+            .iter()
+            .filter(|c| miss_set.contains(c.full.as_str()))
+            .collect();
 
-        if !local_hits.is_empty() {
-            let threshold = local_accept_threshold();
+        // ---- Step 2a: Collect zip codes needed, skip already-cached ones ----
+        let already_cached_zips = overture_cache::cached_postcodes(&conn).unwrap_or_default();
 
-            // Partition local results: high-confidence ones are accepted as
-            // resolved; low-confidence ones are returned to the unresolved
-            // pool so the Geocodio API fallback can attempt a better geocode.
-            let (accepted, _below_threshold): (Vec<_>, Vec<_>) =
-                local_hits.into_iter().partition(|r| r.confidence >= threshold);
+        let needed_zips: Vec<String> = miss_components
+            .iter()
+            .filter_map(|c| c.zip.as_deref())
+            .filter(|z| !z.is_empty() && !already_cached_zips.contains(*z))
+            .map(String::from)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
 
-            debug!(
-                accepted = accepted.len(),
-                below_threshold = _below_threshold.len(),
-                threshold = threshold,
-                "geocode_batch: local fuzzy threshold applied"
-            );
+        if !needed_zips.is_empty() {
+            info!(zip_count = needed_zips.len(), "geocode_batch: downloading Overture data for zip codes");
+            match overture_cache::fetch_by_postcodes(&conn, &needed_zips, |msg, _done, _total| {
+                debug!(msg, "geocode_batch: overture postcode fetch progress");
+            }) {
+                Ok(rows) => debug!(rows, "geocode_batch: Overture postcode fetch complete"),
+                Err(e) => warn!(error = %e, "geocode_batch: Overture postcode fetch failed, continuing"),
+            }
+        }
 
-            if !accepted.is_empty() {
-                local_fuzzy_count = accepted.len();
+        // ---- Step 2b: Exact Overture match ----
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) {
+                continue;
+            }
+            // Extract street number from the parsed number field or first token
+            let number = comp.number.as_deref();
+            // Use the street field; for free-text addresses this is the full string
+            let street = comp.street.as_deref();
+            let zip = comp.zip.as_deref();
 
-                // Only cache results that met the acceptance threshold.
-                // Low-confidence results are intentionally NOT cached so that
-                // a later Geocodio API lookup can overwrite with a better result.
-                let local_cache_records: Vec<GeocodeResult> = accepted
-                    .iter()
-                    .map(|r| GeocodeResult {
-                        address: r.address.clone(),
-                        lat: r.lat,
-                        lon: r.lon,
-                        source: r.source.clone(),
-                    })
-                    .collect();
-                cache_store(&conn, &local_cache_records, "overture_fuzzy")?;
-
-                for result in accepted {
-                    resolved_by_address.insert(result.address.clone(), result);
+            if number.is_some() && street.is_some() && zip.is_some() {
+                match overture_cache::exact_overture_match(&conn, number, street, zip) {
+                    Ok(Some(mut result)) => {
+                        result.address = comp.full.clone();
+                        debug!(
+                            address = comp.full.as_str(),
+                            gers_id = result.gers_id.as_deref().unwrap_or(""),
+                            "geocode_batch: exact Overture match"
+                        );
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        overture_exact_count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!(error = %e, address = comp.full.as_str(), "geocode_batch: exact_overture_match error"),
                 }
             }
         }
 
+        // ---- Step 2c: Fuzzy Overture match for still-unresolved ----
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) {
+                continue;
+            }
+            match overture_cache::fuzzy_overture_match(
+                &conn,
+                &comp.full,
+                comp.zip.as_deref(),
+                comp.city.as_deref(),
+                comp.state.as_deref(),
+            ) {
+                Ok(Some(mut result)) => {
+                    let threshold = local_accept_threshold();
+                    if result.confidence >= threshold {
+                        result.address = comp.full.clone();
+                        debug!(
+                            address = comp.full.as_str(),
+                            confidence = result.confidence,
+                            "geocode_batch: fuzzy Overture match (from zip cache)"
+                        );
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        local_fuzzy_count += 1;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => warn!(error = %e, address = comp.full.as_str(), "geocode_batch: fuzzy_overture_match error"),
+            }
+        }
+
+        // ---- Step 2d: City-level Overture download for unresolved with city+state ----
+        let already_cached_cities = overture_cache::cached_cities(&conn).unwrap_or_default();
+
+        let needed_cities: Vec<(String, String)> = miss_components
+            .iter()
+            .filter(|c| !resolved_by_address.contains_key(&c.full))
+            .filter_map(|c| {
+                let city = c.city.as_deref()?.trim().to_string();
+                let state = c.state.as_deref()?.trim().to_string();
+                if city.is_empty() || state.is_empty() {
+                    return None;
+                }
+                Some((city, state))
+            })
+            .filter(|pair| !already_cached_cities.contains(pair))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !needed_cities.is_empty() {
+            info!(city_count = needed_cities.len(), "geocode_batch: downloading Overture data for cities");
+            match overture_cache::fetch_by_cities(&conn, &needed_cities, |msg, _done, _total| {
+                debug!(msg, "geocode_batch: overture city fetch progress");
+            }) {
+                Ok(rows) => {
+                    debug!(rows, "geocode_batch: Overture city fetch complete");
+                    // Retry fuzzy match with newly downloaded data
+                    for comp in &miss_components {
+                        if resolved_by_address.contains_key(&comp.full) {
+                            continue;
+                        }
+                        if comp.city.is_none() || comp.state.is_none() {
+                            continue;
+                        }
+                        match overture_cache::fuzzy_overture_match(
+                            &conn,
+                            &comp.full,
+                            comp.zip.as_deref(),
+                            comp.city.as_deref(),
+                            comp.state.as_deref(),
+                        ) {
+                            Ok(Some(mut result)) => {
+                                let threshold = local_accept_threshold();
+                                if result.confidence >= threshold {
+                                    result.address = comp.full.clone();
+                                    debug!(
+                                        address = comp.full.as_str(),
+                                        confidence = result.confidence,
+                                        "geocode_batch: fuzzy Overture match (from city cache)"
+                                    );
+                                    resolved_by_address.insert(comp.full.clone(), result);
+                                    local_fuzzy_count += 1;
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => warn!(error = %e, "geocode_batch: fuzzy_overture_match (city) error"),
+                        }
+                    }
+                }
+                Err(e) => warn!(error = %e, "geocode_batch: Overture city fetch failed, continuing"),
+            }
+        }
+
+        // ---- Step 2e: State-level Overture download for still-unresolved with state ----
+        let already_cached_states = overture_cache::cached_states(&conn).unwrap_or_default();
+
+        let needed_states: Vec<String> = miss_components
+            .iter()
+            .filter(|c| !resolved_by_address.contains_key(&c.full))
+            .filter_map(|c| c.state.as_deref())
+            .filter(|s| !s.is_empty() && !already_cached_states.contains(*s))
+            .map(String::from)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !needed_states.is_empty() {
+            info!(state_count = needed_states.len(), "geocode_batch: downloading Overture data for states");
+            match overture_cache::fetch_by_states(&conn, &needed_states, |msg, _done, _total| {
+                debug!(msg, "geocode_batch: overture state fetch progress");
+            }) {
+                Ok(rows) => {
+                    debug!(rows, "geocode_batch: Overture state fetch complete");
+                    // Retry fuzzy match with newly downloaded state data
+                    for comp in &miss_components {
+                        if resolved_by_address.contains_key(&comp.full) {
+                            continue;
+                        }
+                        if comp.state.is_none() {
+                            continue;
+                        }
+                        match overture_cache::fuzzy_overture_match(
+                            &conn,
+                            &comp.full,
+                            comp.zip.as_deref(),
+                            comp.city.as_deref(),
+                            comp.state.as_deref(),
+                        ) {
+                            Ok(Some(mut result)) => {
+                                let threshold = local_accept_threshold();
+                                if result.confidence >= threshold {
+                                    result.address = comp.full.clone();
+                                    debug!(
+                                        address = comp.full.as_str(),
+                                        confidence = result.confidence,
+                                        "geocode_batch: fuzzy Overture match (from state cache)"
+                                    );
+                                    resolved_by_address.insert(comp.full.clone(), result);
+                                    local_fuzzy_count += 1;
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => warn!(error = %e, "geocode_batch: fuzzy_overture_match (state) error"),
+                        }
+                    }
+                }
+                Err(e) => warn!(error = %e, "geocode_batch: Overture state fetch failed, continuing"),
+            }
+        }
+
+        // ---- Step 3: Existing local fuzzy geocode (lookup tables) ----
+        // Collect still-unresolved miss addresses for the legacy path
+        let still_unresolved_for_local: Vec<String> = misses
+            .iter()
+            .filter(|a| !resolved_by_address.contains_key(*a))
+            .cloned()
+            .collect();
+
+        if !still_unresolved_for_local.is_empty() {
+            info!(miss_count = still_unresolved_for_local.len(), "geocode_batch: attempting local fuzzy geocode");
+            let local_hits = local_fuzzy_geocode(&conn, &still_unresolved_for_local, Some(db_path))?;
+            debug!(local_hits = local_hits.len(), "geocode_batch: local fuzzy geocode complete");
+
+            if !local_hits.is_empty() {
+                let threshold = local_accept_threshold();
+
+                let (accepted, _below_threshold): (Vec<_>, Vec<_>) =
+                    local_hits.into_iter().partition(|r| r.confidence >= threshold);
+
+                debug!(
+                    accepted = accepted.len(),
+                    below_threshold = _below_threshold.len(),
+                    threshold = threshold,
+                    "geocode_batch: local fuzzy threshold applied"
+                );
+
+                if !accepted.is_empty() {
+                    local_fuzzy_count += accepted.len();
+
+                    let local_cache_records: Vec<GeocodeResult> = accepted
+                        .iter()
+                        .map(|r| GeocodeResult {
+                            address: r.address.clone(),
+                            lat: r.lat,
+                            lon: r.lon,
+                            source: r.source.clone(),
+                        })
+                        .collect();
+                    cache_store(&conn, &local_cache_records, "overture_fuzzy")?;
+
+                    for result in accepted {
+                        resolved_by_address.insert(result.address.clone(), result);
+                    }
+                }
+            }
+        }
+
+        // ---- Step 4: Geocodio API fallback ----
         let unresolved: Vec<String> = misses
             .into_iter()
             .filter(|address| !resolved_by_address.contains_key(address))
@@ -433,9 +684,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
 
             // Use the inner function so we get the real `accuracy` score from
             // the Geocodio API rather than falling back to the hardcoded 0.85
-            // default.  The real accuracy is a float in [0, 1] where 1.0 means
-            // a rooftop-level match and lower values indicate less precise
-            // results (e.g. 0.8 for street_center).
+            // default.
             let geocodio_results = run_async(geocode_via_geocodio_inner(&api_key, &unresolved, &base_url))
                 .map_err(|e| {
                     error!(error = %e, "geocode_batch: Geocodio API call failed");
@@ -448,14 +697,39 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
                 .collect();
             cache_store(&conn, &cache_records, "geocodio")?;
 
+            // Build a zip map from address → zip for GERS reverse lookup
+            let addr_to_zip: HashMap<String, Option<String>> = components
+                .iter()
+                .map(|c| (c.full.clone(), c.zip.clone()))
+                .collect();
+
             for enriched in geocodio_results {
-                // Use the real API accuracy as confidence; fall back to the
-                // default only if the field was absent (serde default = 0.0).
                 let confidence = if enriched.accuracy > 0.0 {
                     enriched.accuracy
                 } else {
                     default_confidence("geocodio")
                 };
+
+                // ---- Step 5: GERS reverse lookup for Geocodio results ----
+                let zip_hint = addr_to_zip
+                    .get(&enriched.inner.address)
+                    .and_then(|z| z.as_deref());
+                let gers_id = overture_cache::reverse_lookup_gers(
+                    &conn,
+                    enriched.inner.lat,
+                    enriched.inner.lon,
+                    zip_hint,
+                )
+                .unwrap_or(None);
+
+                if gers_id.is_some() {
+                    debug!(
+                        address = enriched.inner.address.as_str(),
+                        gers_id = gers_id.as_deref().unwrap_or(""),
+                        "geocode_batch: attached GERS ID to Geocodio result"
+                    );
+                }
+
                 resolved_by_address.insert(
                     enriched.inner.address.clone(),
                     GeocodeBatchResult {
@@ -466,6 +740,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
                         confidence,
                         matched_label: None,
                         matched_table: None,
+                        gers_id,
                     },
                 );
             }
@@ -473,7 +748,7 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
     }
 
     let mut ordered = Vec::new();
-    for address in addresses {
+    for address in &addresses {
         if let Some(result) = resolved_by_address.get(address) {
             ordered.push(result.clone());
         }
@@ -481,23 +756,25 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
 
     let total = addresses.len();
     let geocoded = ordered.len();
-    let unresolved = total - geocoded;
+    let unresolved_count = total - geocoded;
     let stats = GeocodeStats {
         total,
         geocoded,
         cache_hits: cache_hit_count,
+        overture_exact: overture_exact_count,
         local_fuzzy: local_fuzzy_count,
         api_resolved: api_resolved_count,
-        unresolved,
+        unresolved: unresolved_count,
     };
 
     info!(
         resolved_count = geocoded,
         total = total,
         cache_hits = cache_hit_count,
+        overture_exact = overture_exact_count,
         local_fuzzy = local_fuzzy_count,
         api_resolved = api_resolved_count,
-        unresolved = unresolved,
+        unresolved = unresolved_count,
         "geocode_batch: complete"
     );
     Ok((ordered, stats))
