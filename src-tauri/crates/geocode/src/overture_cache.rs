@@ -190,6 +190,10 @@ pub fn fetch_by_postcodes(
 }
 
 /// Download Overture addresses for the given (city, state) pairs.
+///
+/// Uses a **single S3 parquet scan** with all (city, state) pairs in the WHERE
+/// clause, instead of one scan per city.  For 41 cities this reduces S3 round
+/// trips from 41 (~9 min) to 1 (~30-60s).
 pub fn fetch_by_cities(
     conn: &Connection,
     cities: &[(String, String)],
@@ -201,62 +205,88 @@ pub fn fetch_by_cities(
     ensure_extensions(conn)?;
     ensure_cache_table(conn)?;
 
-    let mut total_inserted = 0usize;
-    for (i, (city, state)) in cities.iter().enumerate() {
-        progress(
-            &format!("Downloading addresses for {}, {}...", city, state),
-            i,
-            cities.len(),
-        );
+    progress(
+        &format!("Downloading Overture addresses for {} cities (single scan)...", cities.len()),
+        0,
+        cities.len(),
+    );
 
-        let safe_city = city.replace('\'', "''").to_uppercase();
+    // Group cities by state for a compact WHERE clause
+    let mut state_cities: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (city, state) in cities {
         let safe_state = state.replace('\'', "''").to_uppercase();
+        let safe_city = city.replace('\'', "''").to_uppercase();
+        state_cities.entry(safe_state).or_default().push(safe_city);
+    }
 
-        let sql = format!(
-            "INSERT OR IGNORE INTO overture_addr_cache
-             SELECT
-                 CAST(id AS VARCHAR) AS gers_id,
-                 CAST(number AS VARCHAR),
-                 CAST(street AS VARCHAR),
-                 CAST(postcode AS VARCHAR),
-                 CAST(address_levels[2].value AS VARCHAR),
-                 CAST(address_levels[1].value AS VARCHAR),
-                 CAST(ST_Y(geometry) AS DOUBLE),
-                 CAST(ST_X(geometry) AS DOUBLE),
-                 lower(trim(regexp_replace(
-                     concat_ws(' ',
-                         coalesce(CAST(number AS VARCHAR), ''),
-                         coalesce(CAST(street AS VARCHAR), ''),
-                         coalesce(CAST(address_levels[2].value AS VARCHAR), ''),
-                         coalesce(CAST(postcode AS VARCHAR), '')
-                     ),
-                     '\\s+', ' '
-                 )))
-             FROM read_parquet('{source}')
-             WHERE country = 'US'
-               AND upper(CAST(address_levels[2].value AS VARCHAR)) = '{city}'
-               AND upper(CAST(address_levels[1].value AS VARCHAR)) = '{state}'",
-            source = addresses_source(),
-            city = safe_city,
-            state = safe_state,
-        );
+    // Build OR conditions: (state = 'TX' AND city IN ('DALLAS','HOUSTON')) OR ...
+    let or_clauses: Vec<String> = state_cities
+        .iter()
+        .map(|(state, city_list)| {
+            let in_list = city_list
+                .iter()
+                .map(|c| format!("'{c}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "(upper(CAST(address_levels[1].value AS VARCHAR)) = '{state}' \
+                 AND upper(CAST(address_levels[2].value AS VARCHAR)) IN ({in_list}))"
+            )
+        })
+        .collect();
 
-        let count = conn.execute(&sql, [])?;
-        info!(city = city.as_str(), state = state.as_str(), rows = count, "overture_cache: city fetch");
+    let where_clause = or_clauses.join("\n               OR ");
+
+    let sql = format!(
+        "INSERT OR IGNORE INTO overture_addr_cache
+         SELECT
+             CAST(id AS VARCHAR) AS gers_id,
+             CAST(number AS VARCHAR),
+             CAST(street AS VARCHAR),
+             CAST(postcode AS VARCHAR),
+             CAST(address_levels[2].value AS VARCHAR),
+             CAST(address_levels[1].value AS VARCHAR),
+             CAST(ST_Y(geometry) AS DOUBLE),
+             CAST(ST_X(geometry) AS DOUBLE),
+             lower(trim(regexp_replace(
+                 concat_ws(' ',
+                     coalesce(CAST(number AS VARCHAR), ''),
+                     coalesce(CAST(street AS VARCHAR), ''),
+                     coalesce(CAST(address_levels[2].value AS VARCHAR), ''),
+                     coalesce(CAST(postcode AS VARCHAR), '')
+                 ),
+                 '\\s+', ' '
+             )))
+         FROM read_parquet('{source}')
+         WHERE country = 'US'
+           AND ({where_clause})",
+        source = addresses_source(),
+        where_clause = where_clause,
+    );
+
+    info!(city_count = cities.len(), "overture_cache: fetching addresses for all cities (single scan)");
+    let count = conn.execute(&sql, [])?;
+    info!(rows = count, cities = cities.len(), "overture_cache: city batch fetch complete");
+
+    for (city, state) in cities {
         log_download(conn, "city", &format!("{}:{}", city, state), count as i64).ok();
-        total_inserted += count;
     }
 
     progress(
-        &format!("Downloaded {} address records for {} cities", total_inserted, cities.len()),
+        &format!("Downloaded {} Overture address records for {} cities", count, cities.len()),
         cities.len(),
         cities.len(),
     );
 
-    Ok(total_inserted)
+    Ok(count)
 }
 
 /// Download Overture addresses for entire states.
+///
+/// Uses a **single S3 parquet scan** with all states in the WHERE clause,
+/// instead of one scan per state.  For 19 states this reduces S3 round trips
+/// from 19 (~10+ min) to 1 (~2-3 min).
 pub fn fetch_by_states(
     conn: &Connection,
     states: &[String],
@@ -268,56 +298,67 @@ pub fn fetch_by_states(
     ensure_extensions(conn)?;
     ensure_cache_table(conn)?;
 
-    let mut total_inserted = 0usize;
-    for (i, state) in states.iter().enumerate() {
-        progress(
-            &format!("Downloading all addresses for {}... (this may take a few minutes)", state),
-            i,
-            states.len(),
-        );
+    progress(
+        &format!(
+            "Downloading all Overture addresses for {} states (single scan)...",
+            states.len()
+        ),
+        0,
+        states.len(),
+    );
 
-        let safe_state = state.replace('\'', "''").to_uppercase();
+    let in_list = states
+        .iter()
+        .map(|s| format!("'{}'", s.replace('\'', "''").to_uppercase()))
+        .collect::<Vec<_>>()
+        .join(", ");
 
-        let sql = format!(
-            "INSERT OR IGNORE INTO overture_addr_cache
-             SELECT
-                 CAST(id AS VARCHAR) AS gers_id,
-                 CAST(number AS VARCHAR),
-                 CAST(street AS VARCHAR),
-                 CAST(postcode AS VARCHAR),
-                 CAST(address_levels[2].value AS VARCHAR),
-                 CAST(address_levels[1].value AS VARCHAR),
-                 CAST(ST_Y(geometry) AS DOUBLE),
-                 CAST(ST_X(geometry) AS DOUBLE),
-                 lower(trim(regexp_replace(
-                     concat_ws(' ',
-                         coalesce(CAST(number AS VARCHAR), ''),
-                         coalesce(CAST(street AS VARCHAR), ''),
-                         coalesce(CAST(address_levels[2].value AS VARCHAR), ''),
-                         coalesce(CAST(postcode AS VARCHAR), '')
-                     ),
-                     '\\s+', ' '
-                 )))
-             FROM read_parquet('{source}')
-             WHERE country = 'US'
-               AND upper(CAST(address_levels[1].value AS VARCHAR)) = '{state}'",
-            source = addresses_source(),
-            state = safe_state,
-        );
+    let sql = format!(
+        "INSERT OR IGNORE INTO overture_addr_cache
+         SELECT
+             CAST(id AS VARCHAR) AS gers_id,
+             CAST(number AS VARCHAR),
+             CAST(street AS VARCHAR),
+             CAST(postcode AS VARCHAR),
+             CAST(address_levels[2].value AS VARCHAR),
+             CAST(address_levels[1].value AS VARCHAR),
+             CAST(ST_Y(geometry) AS DOUBLE),
+             CAST(ST_X(geometry) AS DOUBLE),
+             lower(trim(regexp_replace(
+                 concat_ws(' ',
+                     coalesce(CAST(number AS VARCHAR), ''),
+                     coalesce(CAST(street AS VARCHAR), ''),
+                     coalesce(CAST(address_levels[2].value AS VARCHAR), ''),
+                     coalesce(CAST(postcode AS VARCHAR), '')
+                 ),
+                 '\\s+', ' '
+             )))
+         FROM read_parquet('{source}')
+         WHERE country = 'US'
+           AND upper(CAST(address_levels[1].value AS VARCHAR)) IN ({in_list})",
+        source = addresses_source(),
+        in_list = in_list,
+    );
 
-        let count = conn.execute(&sql, [])?;
-        info!(state = state.as_str(), rows = count, "overture_cache: state fetch");
+    info!(state_count = states.len(), states = ?states, "overture_cache: fetching addresses for all states (single scan)");
+    let count = conn.execute(&sql, [])?;
+    info!(rows = count, states = states.len(), "overture_cache: state batch fetch complete");
+
+    for state in states {
         log_download(conn, "state", state, count as i64).ok();
-        total_inserted += count;
     }
 
     progress(
-        &format!("Downloaded {} address records for {} states", total_inserted, states.len()),
+        &format!(
+            "Downloaded {} Overture address records for {} states",
+            count,
+            states.len()
+        ),
         states.len(),
         states.len(),
     );
 
-    Ok(total_inserted)
+    Ok(count)
 }
 
 /// Attempt an exact match against the Overture address cache.
