@@ -127,12 +127,12 @@ function TablePreview({ tableName }: { tableName: string }) {
   if (!data || data.rows.length === 0) return <p className="text-xs text-muted-foreground">No rows</p>;
 
   return (
-    <div className="overflow-x-auto overflow-y-auto max-h-60">
+    <div className="overflow-x-auto overflow-y-auto max-h-60 border border-border rounded-md">
       <table className="w-full border-collapse text-[11px]">
         <thead>
-          <tr>
+          <tr className="bg-secondary">
             {data.columns.map((col) => (
-              <th key={col} className="px-1.5 py-1 border-b border-border text-left whitespace-nowrap font-semibold sticky top-0 bg-card">
+              <th key={col} className="px-2 py-1.5 border-b border-r border-border text-left whitespace-nowrap font-semibold sticky top-0 bg-secondary text-muted-foreground uppercase text-[10px] tracking-wide last:border-r-0">
                 {col}
               </th>
             ))}
@@ -140,10 +140,10 @@ function TablePreview({ tableName }: { tableName: string }) {
         </thead>
         <tbody>
           {data.rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={i % 2 === 0 ? "bg-transparent" : "bg-secondary/40"}>
               {data.columns.map((col) => (
-                <td key={col} className="px-1.5 py-0.5 border-b border-border/50 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis">
-                  {row[col] ?? <span className="text-muted-foreground">null</span>}
+                <td key={col} className="px-2 py-1 border-b border-r border-border/40 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis last:border-r-0">
+                  {row[col] ?? <span className="text-muted-foreground italic">null</span>}
                 </td>
               ))}
             </tr>
