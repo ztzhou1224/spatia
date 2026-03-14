@@ -20,22 +20,16 @@ Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDEN
 
 - Frontend: React 19 + TypeScript + Vite, Radix UI, Zustand
 - Desktop shell: Tauri v2
-- Rust crates:
-  - `spatia_engine` (core data + geospatial logic)
-  - `spatia_ai` (Gemini client + prompts + cleaner helpers)
-  - `spatia_cli` (CLI wrapper)
-- Database: DuckDB + `spatial` (and `httpfs` when needed)
-- Map runtime: MapLibre + PMTiles + Deck.gl overlay
+- Rust crates: `spatia_engine` (core), `spatia_ai` (Gemini, feature-gated), `spatia_cli`
+- Database: DuckDB + `spatial` / `httpfs`
+- Map runtime: MapLibre + PMTiles + Deck.gl (scatter, heatmap, hexbin)
 
 ## Non-Negotiables
 
 - Do not rewrite core architecture or DB schemas without explicit permission.
 - Keep Rust code warning-free and memory-safe.
-- Validate all SQL identifiers from user input.
-- Preserve test/lint gate before handoff:
-  1. `pnpm build`
-  2. `cargo test --workspace`
-  3. `cargo clippy --workspace`
+- Validate all SQL identifiers from user input via `identifiers.rs`.
+- Quality gate before handoff: `pnpm build` then `cargo test --workspace && cargo clippy --workspace`.
 
 ## High-Value Gotchas
 
@@ -49,13 +43,13 @@ Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDEN
 
 ## Core Paths
 
-- App shell: `src/App.tsx` — three-component flat layout (MapView, FileList, ChatCard)
-- Components: `src/components/MapView.tsx`, `src/components/FileList.tsx`, `src/components/ChatCard.tsx`
-- State store: `src/lib/appStore.ts` (Zustand — tables, chatMessages, analysisGeoJson, tableGeoJson, visualizationType, selectedTablesForChat, apiConfig)
-- Map actions: `src/lib/mapActions.ts` (executeMapActions over MapLibre ref)
+- App shell: `src/App.tsx` -- three-component flat layout (MapView, FileList, ChatCard)
+- Components: `src/components/MapView.tsx`, `FileList.tsx`, `ChatCard.tsx`
+- State: `src/lib/appStore.ts` (tables, chatMessages, analysisGeoJson, tableGeoJson, visualizationType, selectedTablesForChat, apiConfig)
+- Map actions: `src/lib/mapActions.ts`
 - Tauri commands: `src-tauri/src/lib.rs`
-- Engine core: `src-tauri/crates/engine/src`
-- AI prompts/client: `src-tauri/crates/ai/src`
+- Engine: `src-tauri/crates/engine/src/`
+- AI: `src-tauri/crates/ai/src/`
 
 ## Agent Team
 
@@ -69,8 +63,17 @@ Every feature must pass: PROPOSE (PM) -> VALIDATE (Underwriter Expert) -> EVIDEN
 | ui-design-architect | Component design, UX |
 | gis-domain-expert | Spatial analysis advisory |
 
+## Operational Commands
+
+- Dev: `pnpm tauri dev` (insurance mode: `SPATIA_DOMAIN_PACK=insurance_underwriting pnpm tauri dev`)
+- Build: `pnpm build`
+- Test: `cargo test --workspace`
+- Lint: `cargo clippy --workspace`
+
 ## Active Risks
 
-- AI env setup (`SPATIA_GEMINI_API_KEY`) needs clearer UX diagnostics (partially addressed with banners).
+- Pre-launch blockers: no data export, no settings UI, no map legend, no map export (see `plan.md` Phase 1).
 - Risk layer data model and subscription infrastructure not yet built.
-- Underwriter system prompt not yet implemented — chat is still generic GIS mode.
+- Single-provider AI dependency (Gemini only).
+- Setup friction (PMTiles + env vars) blocks non-technical users.
+- 1K feature limit causes silent truncation on real-world datasets.
