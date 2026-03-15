@@ -603,8 +603,7 @@ pub fn geocode_batch_with_components(
 ///    a. Extract zip codes; download Overture data for those zips.
 ///    b. Try exact Overture match (number + street + postcode).
 ///    c. Try fuzzy Overture match for remaining.
-///    d. For unresolved with city/state, try city-level Overture download.
-///    e. For still-unresolved with state only, try state-level Overture download.
+///    d. Unresolved addresses fall through to Geocodio API (if key provided).
 /// 3. Existing local fuzzy geocode (lookup tables) as fallback.
 /// 4. Geocodio API fallback for anything still unresolved.
 /// 5. GERS reverse lookup to attach GERS IDs to Geocodio results.
@@ -736,125 +735,9 @@ pub fn geocode_batch_overture_first(
             }
         }
 
-        // ---- Step 2d: City-level Overture download for unresolved with city+state ----
-        let already_cached_cities = overture_cache::cached_cities(&conn).unwrap_or_default();
-
-        let needed_cities: Vec<(String, String)> = miss_components
-            .iter()
-            .filter(|c| !resolved_by_address.contains_key(&c.full))
-            .filter_map(|c| {
-                let city = c.city.as_deref()?.trim().to_string();
-                let state = c.state.as_deref()?.trim().to_string();
-                if city.is_empty() || state.is_empty() {
-                    return None;
-                }
-                Some((city, state))
-            })
-            .filter(|pair| !already_cached_cities.contains(pair))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        if !needed_cities.is_empty() {
-            info!(city_count = needed_cities.len(), "geocode_batch: downloading Overture data for cities");
-            match overture_cache::fetch_by_cities(&conn, &needed_cities, |msg, _done, _total| {
-                debug!(msg, "geocode_batch: overture city fetch progress");
-            }) {
-                Ok(rows) => {
-                    debug!(rows, "geocode_batch: Overture city fetch complete");
-                    // Retry fuzzy match with newly downloaded data
-                    for comp in &miss_components {
-                        if resolved_by_address.contains_key(&comp.full) {
-                            continue;
-                        }
-                        if comp.city.is_none() || comp.state.is_none() {
-                            continue;
-                        }
-                        match overture_cache::fuzzy_overture_match(
-                            &conn,
-                            &comp.full,
-                            comp.zip.as_deref(),
-                            comp.city.as_deref(),
-                            comp.state.as_deref(),
-                        ) {
-                            Ok(Some(mut result)) => {
-                                let threshold = local_accept_threshold();
-                                if result.confidence >= threshold {
-                                    result.address = comp.full.clone();
-                                    debug!(
-                                        address = comp.full.as_str(),
-                                        confidence = result.confidence,
-                                        "geocode_batch: fuzzy Overture match (from city cache)"
-                                    );
-                                    resolved_by_address.insert(comp.full.clone(), result);
-                                    local_fuzzy_count += 1;
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => warn!(error = %e, "geocode_batch: fuzzy_overture_match (city) error"),
-                        }
-                    }
-                }
-                Err(e) => warn!(error = %e, "geocode_batch: Overture city fetch failed, continuing"),
-            }
-        }
-
-        // ---- Step 2e: State-level Overture download for still-unresolved with state ----
-        let already_cached_states = overture_cache::cached_states(&conn).unwrap_or_default();
-
-        let needed_states: Vec<String> = miss_components
-            .iter()
-            .filter(|c| !resolved_by_address.contains_key(&c.full))
-            .filter_map(|c| c.state.as_deref())
-            .filter(|s| !s.is_empty() && !already_cached_states.contains(*s))
-            .map(String::from)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        if !needed_states.is_empty() {
-            info!(state_count = needed_states.len(), "geocode_batch: downloading Overture data for states");
-            match overture_cache::fetch_by_states(&conn, &needed_states, |msg, _done, _total| {
-                debug!(msg, "geocode_batch: overture state fetch progress");
-            }) {
-                Ok(rows) => {
-                    debug!(rows, "geocode_batch: Overture state fetch complete");
-                    // Retry fuzzy match with newly downloaded state data
-                    for comp in &miss_components {
-                        if resolved_by_address.contains_key(&comp.full) {
-                            continue;
-                        }
-                        if comp.state.is_none() {
-                            continue;
-                        }
-                        match overture_cache::fuzzy_overture_match(
-                            &conn,
-                            &comp.full,
-                            comp.zip.as_deref(),
-                            comp.city.as_deref(),
-                            comp.state.as_deref(),
-                        ) {
-                            Ok(Some(mut result)) => {
-                                let threshold = local_accept_threshold();
-                                if result.confidence >= threshold {
-                                    result.address = comp.full.clone();
-                                    debug!(
-                                        address = comp.full.as_str(),
-                                        confidence = result.confidence,
-                                        "geocode_batch: fuzzy Overture match (from state cache)"
-                                    );
-                                    resolved_by_address.insert(comp.full.clone(), result);
-                                    local_fuzzy_count += 1;
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => warn!(error = %e, "geocode_batch: fuzzy_overture_match (state) error"),
-                        }
-                    }
-                }
-                Err(e) => warn!(error = %e, "geocode_batch: Overture state fetch failed, continuing"),
-            }
-        }
+        // City/state-level Overture downloads removed — zip-level is sufficient.
+        // Unresolved addresses fall through to Geocodio API (if key provided)
+        // or remain unresolved.
 
         // ---- Step 3: Existing local fuzzy geocode (lookup tables) ----
         // Collect still-unresolved miss addresses for the legacy path
