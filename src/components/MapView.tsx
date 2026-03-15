@@ -10,6 +10,7 @@ import { useAppStore } from "../lib/appStore";
 import { isTauri } from "../lib/tauri";
 import { MapLegend } from "./MapLegend";
 import { BasemapSelector } from "./BasemapSelector";
+import { LayerPanel } from "./LayerPanel";
 
 /** Basemap style definitions */
 const BASEMAP_STYLES: Record<string, maplibregl.StyleSpecification> = {
@@ -84,6 +85,12 @@ const TABLE_FILL_PREFIX = "table-fill-";
 const TABLE_LINE_PREFIX = "table-line-";
 const TABLE_CIRCLE_PREFIX = "table-circle-";
 
+// Prefix for risk overlay layers
+const RISK_SOURCE_PREFIX = "risk-geom-";
+const RISK_FILL_PREFIX = "risk-fill-";
+const RISK_LINE_PREFIX = "risk-line-";
+const RISK_CIRCLE_PREFIX = "risk-circle-";
+
 // Blue color for table data points (distinct from purple analysis results)
 const TABLE_POINT_COLOR: [number, number, number, number] = [37, 99, 235, 200];
 
@@ -101,6 +108,9 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
   const tables = useAppStore((s) => s.tables);
   const basemapId = useAppStore((s) => s.basemapId);
   const analysisTotalCount = useAppStore((s) => s.analysisTotalCount);
+  const layerVisibility = useAppStore((s) => s.layerVisibility);
+  const layerOpacity = useAppStore((s) => s.layerOpacity);
+  const riskLayerGeoJson = useAppStore((s) => s.riskLayerGeoJson);
   const [exporting, setExporting] = useState(false);
   const buildingsFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBuildingsBboxRef = useRef<string | null>(null);
@@ -119,6 +129,11 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     if (!map) return;
     const fc = useAppStore.getState().analysisGeoJson as any;
     const config = useAppStore.getState().domainConfig;
+    const visibility = useAppStore.getState().layerVisibility;
+    const opacity = useAppStore.getState().layerOpacity;
+    const analysisVisible = visibility["analysis"] !== false;
+    const analysisOpacity = opacity["analysis"] ?? 1;
+    const mapVisibility = analysisVisible ? "visible" : "none";
 
     // Remove old layers
     for (const layerId of [ANALYSIS_LAYER_ID, ANALYSIS_FILL_LAYER_ID, ANALYSIS_LINE_LAYER_ID]) {
@@ -176,12 +191,13 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
       type: "circle",
       source: ANALYSIS_SOURCE_ID,
       filter: ["==", ["geometry-type"], "Point"],
+      layout: { visibility: mapVisibility },
       paint: {
         "circle-radius": 6,
         "circle-color": config.ui_config.primary_color,
         "circle-stroke-width": 1,
         "circle-stroke-color": "#fff",
-        "circle-opacity": 0.8,
+        "circle-opacity": 0.8 * analysisOpacity,
       },
     });
 
@@ -191,9 +207,10 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
       type: "fill",
       source: ANALYSIS_SOURCE_ID,
       filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+      layout: { visibility: mapVisibility },
       paint: {
         "fill-color": config.ui_config.primary_color,
-        "fill-opacity": 0.3,
+        "fill-opacity": 0.3 * analysisOpacity,
       },
     });
 
@@ -203,9 +220,11 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
       type: "line",
       source: ANALYSIS_SOURCE_ID,
       filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]],
+      layout: { visibility: mapVisibility },
       paint: {
         "line-color": config.ui_config.primary_color,
         "line-width": 2,
+        "line-opacity": analysisOpacity,
       },
     });
 
@@ -394,7 +413,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     } else {
       map.once("load", applyAnalysisLayer);
     }
-  }, [analysisGeoJson, applyAnalysisLayer]);
+  }, [analysisGeoJson, layerVisibility, layerOpacity, applyAnalysisLayer]);
 
   // Deck.gl overlay — table data (blue) rendered below analysis results (purple/heatmap/hexbin)
   useEffect(() => {
@@ -404,6 +423,11 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
 
     // Table data layers (blue) — one ScatterplotLayer per table, rendered first (bottom)
     for (const [tableName, rawFc] of Object.entries(tableGeoJson)) {
+      const tableLayerId = `table-${tableName}`;
+      const tableVisible = layerVisibility[tableLayerId] !== false;
+      if (!tableVisible) continue;
+
+      const tableOpacity = layerOpacity[tableLayerId] ?? 1;
       const fc = rawFc as {
         type?: string;
         features?: Array<{ geometry?: { type?: string; coordinates?: number[] } }>;
@@ -418,13 +442,20 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         }));
 
       if (pointData.length > 0) {
+        const baseColor = TABLE_POINT_COLOR;
+        const fillColor: [number, number, number, number] = [
+          baseColor[0],
+          baseColor[1],
+          baseColor[2],
+          Math.round(baseColor[3] * tableOpacity),
+        ];
         layers.push(
           new ScatterplotLayer({
             id: `table-scatter-${tableName}`,
             data: pointData,
             getPosition: (d: { position: [number, number] }) => d.position,
             getRadius: 40,
-            getFillColor: TABLE_POINT_COLOR,
+            getFillColor: fillColor,
             pickable: true,
           })
         );
@@ -432,87 +463,92 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     }
 
     // Analysis result layer — rendered on top, type determined by visualizationType
-    const analysisFc = analysisGeoJson as {
-      type?: string;
-      features?: Array<{
-        geometry?: { type?: string; coordinates?: number[] };
-        properties?: Record<string, unknown>;
-      }>;
-    };
-    const analysisPointData = (analysisFc.features ?? [])
-      .filter((f) => f.geometry?.type === "Point")
-      .map((f) => ({
-        position: [
-          f.geometry?.coordinates?.[0] ?? 0,
-          f.geometry?.coordinates?.[1] ?? 0,
-        ] as [number, number],
-        properties: f.properties ?? {},
-      }));
+    const analysisVisible = layerVisibility["analysis"] !== false;
+    const analysisOpacity = layerOpacity["analysis"] ?? 1;
 
-    if (analysisPointData.length > 0) {
-      const vizType = visualizationType ?? "scatter";
+    if (analysisVisible) {
+      const analysisFc = analysisGeoJson as {
+        type?: string;
+        features?: Array<{
+          geometry?: { type?: string; coordinates?: number[] };
+          properties?: Record<string, unknown>;
+        }>;
+      };
+      const analysisPointData = (analysisFc.features ?? [])
+        .filter((f) => f.geometry?.type === "Point")
+        .map((f) => ({
+          position: [
+            f.geometry?.coordinates?.[0] ?? 0,
+            f.geometry?.coordinates?.[1] ?? 0,
+          ] as [number, number],
+          properties: f.properties ?? {},
+        }));
 
-      if (vizType === "heatmap") {
-        layers.push(
-          new HeatmapLayer({
-            id: "analysis-heatmap",
-            data: analysisPointData,
-            getPosition: (d: { position: [number, number] }) => d.position,
-            getWeight: (d: { properties: Record<string, unknown> }) => {
-              // Use first numeric property as weight if available, else 1
-              const vals = Object.values(d.properties).filter(
-                (v) => typeof v === "number" && isFinite(v as number)
-              ) as number[];
-              return vals.length > 0 ? Math.abs(vals[0]) : 1;
-            },
-            radiusPixels: 40,
-            colorRange: [
-              [63, 0, 125, 0],
-              [84, 42, 143, 80],
-              [107, 52, 168, 150],
-              [124, 58, 237, 200],
-              [167, 139, 250, 220],
-              [221, 214, 254, 255],
-            ],
-          })
-        );
-      } else if (vizType === "hexbin") {
-        layers.push(
-          new HexagonLayer({
-            id: "analysis-hexbin",
-            data: analysisPointData,
-            getPosition: (d: { position: [number, number] }) => d.position,
-            radius: 500,
-            elevationScale: 0,
-            extruded: false,
-            colorRange: [
-              [63, 0, 125, 80],
-              [84, 42, 143, 130],
-              [107, 52, 168, 170],
-              [124, 58, 237, 200],
-              [167, 139, 250, 220],
-              [221, 214, 254, 255],
-            ],
-            pickable: true,
-          })
-        );
-      } else {
-        // Default: scatter
-        layers.push(
-          new ScatterplotLayer({
-            id: "analysis-scatter",
-            data: analysisPointData,
-            getPosition: (d: { position: [number, number] }) => d.position,
-            getRadius: 40,
-            getFillColor: [124, 58, 237, 180],
-            pickable: true,
-          })
-        );
+      if (analysisPointData.length > 0) {
+        const vizType = visualizationType ?? "scatter";
+
+        if (vizType === "heatmap") {
+          layers.push(
+            new HeatmapLayer({
+              id: "analysis-heatmap",
+              data: analysisPointData,
+              getPosition: (d: { position: [number, number] }) => d.position,
+              getWeight: (d: { properties: Record<string, unknown> }) => {
+                // Use first numeric property as weight if available, else 1
+                const vals = Object.values(d.properties).filter(
+                  (v) => typeof v === "number" && isFinite(v as number)
+                ) as number[];
+                return vals.length > 0 ? Math.abs(vals[0]) : 1;
+              },
+              radiusPixels: 40,
+              colorRange: [
+                [63, 0, 125, 0],
+                [84, 42, 143, Math.round(80 * analysisOpacity)],
+                [107, 52, 168, Math.round(150 * analysisOpacity)],
+                [124, 58, 237, Math.round(200 * analysisOpacity)],
+                [167, 139, 250, Math.round(220 * analysisOpacity)],
+                [221, 214, 254, Math.round(255 * analysisOpacity)],
+              ],
+            })
+          );
+        } else if (vizType === "hexbin") {
+          layers.push(
+            new HexagonLayer({
+              id: "analysis-hexbin",
+              data: analysisPointData,
+              getPosition: (d: { position: [number, number] }) => d.position,
+              radius: 500,
+              elevationScale: 0,
+              extruded: false,
+              colorRange: [
+                [63, 0, 125, Math.round(80 * analysisOpacity)],
+                [84, 42, 143, Math.round(130 * analysisOpacity)],
+                [107, 52, 168, Math.round(170 * analysisOpacity)],
+                [124, 58, 237, Math.round(200 * analysisOpacity)],
+                [167, 139, 250, Math.round(220 * analysisOpacity)],
+                [221, 214, 254, Math.round(255 * analysisOpacity)],
+              ],
+              pickable: true,
+            })
+          );
+        } else {
+          // Default: scatter
+          layers.push(
+            new ScatterplotLayer({
+              id: "analysis-scatter",
+              data: analysisPointData,
+              getPosition: (d: { position: [number, number] }) => d.position,
+              getRadius: 40,
+              getFillColor: [124, 58, 237, Math.round(180 * analysisOpacity)],
+              pickable: true,
+            })
+          );
+        }
       }
     }
 
     deckOverlayRef.current.setProps({ layers });
-  }, [analysisGeoJson, visualizationType, tableGeoJson]);
+  }, [analysisGeoJson, visualizationType, tableGeoJson, layerVisibility, layerOpacity]);
 
   // MapLibre layers for table polygon/line geometries (spatial file imports)
   // Points are handled by Deck.gl ScatterplotLayer above; polygons and lines
@@ -546,6 +582,11 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(fc);
       }
 
+      const tableLayerId = `table-${tableName}`;
+      const tableVisible = layerVisibility[tableLayerId] !== false;
+      const tableOpacity = layerOpacity[tableLayerId] ?? 1;
+      const tableMapVisibility = tableVisible ? "visible" : "none";
+
       // Fill layer for polygons
       if (!map.getLayer(fillId)) {
         map.addLayer({
@@ -553,11 +594,15 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
           type: "fill",
           source: sourceId,
           filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          layout: { visibility: tableMapVisibility },
           paint: {
             "fill-color": "#2563eb",
-            "fill-opacity": 0.25,
+            "fill-opacity": 0.25 * tableOpacity,
           },
         });
+      } else {
+        map.setLayoutProperty(fillId, "visibility", tableMapVisibility);
+        map.setPaintProperty(fillId, "fill-opacity", 0.25 * tableOpacity);
       }
 
       // Line layer for lines and polygon outlines
@@ -567,12 +612,16 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
           type: "line",
           source: sourceId,
           filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+          layout: { visibility: tableMapVisibility },
           paint: {
             "line-color": "#2563eb",
             "line-width": 1.5,
-            "line-opacity": 0.7,
+            "line-opacity": 0.7 * tableOpacity,
           },
         });
+      } else {
+        map.setLayoutProperty(lineId, "visibility", tableMapVisibility);
+        map.setPaintProperty(lineId, "line-opacity", 0.7 * tableOpacity);
       }
 
       // Circle layer for points in spatial files (rendered via MapLibre alongside polygons)
@@ -582,14 +631,18 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
           type: "circle",
           source: sourceId,
           filter: ["==", ["geometry-type"], "Point"],
+          layout: { visibility: tableMapVisibility },
           paint: {
             "circle-radius": 5,
             "circle-color": "#2563eb",
             "circle-stroke-width": 1,
             "circle-stroke-color": "#fff",
-            "circle-opacity": 0.8,
+            "circle-opacity": 0.8 * tableOpacity,
           },
         });
+      } else {
+        map.setLayoutProperty(circleId, "visibility", tableMapVisibility);
+        map.setPaintProperty(circleId, "circle-opacity", 0.8 * tableOpacity);
       }
 
       // Auto-fit bounds to show table data
@@ -634,7 +687,110 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
         }
       }
     }
-  }, [tableGeoJson]);
+  }, [tableGeoJson, layerVisibility, layerOpacity]);
+
+  // MapLibre layers for risk overlay GeoJSON (polygon/line/point geometries)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const activeRiskSources = new Set<string>();
+
+    for (const [riskName, rawFc] of Object.entries(riskLayerGeoJson)) {
+      const fc = rawFc as GeoJSON.FeatureCollection;
+      if (!fc.features?.length) continue;
+
+      const riskLayerId = `risk-${riskName}`;
+      const riskVisible = layerVisibility[riskLayerId] !== false;
+      const riskOpacity = layerOpacity[riskLayerId] ?? 1;
+      const riskMapVisibility = riskVisible ? "visible" : "none";
+
+      const sourceId = `${RISK_SOURCE_PREFIX}${riskName}`;
+      const fillId = `${RISK_FILL_PREFIX}${riskName}`;
+      const lineId = `${RISK_LINE_PREFIX}${riskName}`;
+      const circleId = `${RISK_CIRCLE_PREFIX}${riskName}`;
+      activeRiskSources.add(sourceId);
+
+      if (!map.getSource(sourceId)) {
+        map.addSource(sourceId, { type: "geojson", data: fc });
+      } else {
+        (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(fc);
+      }
+
+      // Fill layer for polygons
+      if (!map.getLayer(fillId)) {
+        map.addLayer({
+          id: fillId,
+          type: "fill",
+          source: sourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          layout: { visibility: riskMapVisibility },
+          paint: {
+            "fill-color": "#f59e0b",
+            "fill-opacity": 0.25 * riskOpacity,
+          },
+        });
+      } else {
+        map.setLayoutProperty(fillId, "visibility", riskMapVisibility);
+        map.setPaintProperty(fillId, "fill-opacity", 0.25 * riskOpacity);
+      }
+
+      // Line layer for lines and polygon outlines
+      if (!map.getLayer(lineId)) {
+        map.addLayer({
+          id: lineId,
+          type: "line",
+          source: sourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+          layout: { visibility: riskMapVisibility },
+          paint: {
+            "line-color": "#f59e0b",
+            "line-width": 1.5,
+            "line-opacity": 0.7 * riskOpacity,
+          },
+        });
+      } else {
+        map.setLayoutProperty(lineId, "visibility", riskMapVisibility);
+        map.setPaintProperty(lineId, "line-opacity", 0.7 * riskOpacity);
+      }
+
+      // Circle layer for points
+      if (!map.getLayer(circleId)) {
+        map.addLayer({
+          id: circleId,
+          type: "circle",
+          source: sourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          layout: { visibility: riskMapVisibility },
+          paint: {
+            "circle-radius": 5,
+            "circle-color": "#f59e0b",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#fff",
+            "circle-opacity": 0.8 * riskOpacity,
+          },
+        });
+      } else {
+        map.setLayoutProperty(circleId, "visibility", riskMapVisibility);
+        map.setPaintProperty(circleId, "circle-opacity", 0.8 * riskOpacity);
+      }
+    }
+
+    // Remove stale risk geometry layers/sources
+    const style = map.getStyle();
+    if (style?.sources) {
+      for (const srcId of Object.keys(style.sources)) {
+        if (srcId.startsWith(RISK_SOURCE_PREFIX) && !activeRiskSources.has(srcId)) {
+          const rName = srcId.slice(RISK_SOURCE_PREFIX.length);
+          for (const prefix of [RISK_FILL_PREFIX, RISK_LINE_PREFIX, RISK_CIRCLE_PREFIX]) {
+            const layerId = `${prefix}${rName}`;
+            if (map.getLayer(layerId)) map.removeLayer(layerId);
+          }
+          map.removeSource(srcId);
+        }
+      }
+    }
+  }, [riskLayerGeoJson, layerVisibility, layerOpacity]);
 
   async function handleExportPng() {
     if (!mapRef.current || !containerRef.current) return;
@@ -681,7 +837,8 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
   return (
     <div className="map-fill">
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-      <BasemapSelector />
+      <LayerPanel />
+      <BasemapSelector left={86} />
       <MapLegend />
 
       {/* Map export button */}
@@ -693,7 +850,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
           style={{
             position: "absolute",
             top: 10,
-            left: 180,
+            left: 224,
             zIndex: 5,
             background: "rgba(15, 15, 20, 0.85)",
             backdropFilter: "blur(8px)",

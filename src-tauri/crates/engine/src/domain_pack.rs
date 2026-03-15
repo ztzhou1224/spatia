@@ -136,6 +136,27 @@ When analyzing insurance portfolios, consider these workflows:
 - Construction types like "frame" or "wood" have higher fire risk than "masonry" or "fire resistive".
 - FEMA flood zones starting with A or V indicate special flood hazard areas.
 
+### Risk data integration
+When risk layer tables are available (e.g., `risk_fema_flood_zones`, `risk_wildfire_hazard`), you can:
+1. **Spatial join** properties against risk zones: `SELECT p.*, f."FLD_ZONE" FROM "my_properties" p, "risk_fema_flood_zones" f WHERE ST_Contains(ST_GeomFromWKB(f.geom), ST_Point(p."_lon", p."_lat"))`
+2. **Aggregate exposure by risk zone**: GROUP BY the risk zone column (e.g., FLD_ZONE) and SUM(TIV).
+3. **Flag high-risk properties**: Identify properties in flood Zone A/AE/V/VE or with high wildfire scores.
+4. **Distance calculations**: Use the Haversine formula for distance to nearest hazard boundary.
+
+When risk layers are loaded, proactively suggest cross-referencing portfolio data against them. This is the core value of the platform.
+
+### FEMA Flood Zone reference
+- Zone A, AE: 100-year (1% annual chance) flood area — Special Flood Hazard Area (SFHA)
+- Zone V, VE: Coastal high hazard area (storm surge + waves)
+- Zone X (shaded): 500-year (0.2% annual chance) flood area — moderate risk
+- Zone X (unshaded): Minimal flood hazard — outside SFHA
+- Zones starting with A or V = mandatory flood insurance for federally-backed mortgages
+
+### Wildfire risk reference
+- WHP (Wildfire Hazard Potential) scores: 1=Very Low, 2=Low, 3=Moderate, 4=High, 5=Very High
+- WUI (Wildland-Urban Interface) zones have elevated risk due to proximity to vegetation
+- Properties within 1 mile of high-WHP zones should be flagged for underwriting review
+
 ### Guard rail
 When the user's question is not insurance-related, respond as a general GIS assistant. Do not force insurance context onto unrelated questions.
 "#;
@@ -277,6 +298,34 @@ fn insurance_column_rules() -> Vec<ColumnDetectionRule> {
             display_label: "Distance to Coast".into(),
         },
     ]
+}
+
+/// Build a prompt section describing available risk layers for AI context injection.
+/// Returns empty string if no risk layers are loaded.
+pub fn format_risk_layer_context(
+    risk_tables: &[(String, Vec<crate::TableColumn>)],
+) -> String {
+    if risk_tables.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("\n## Available risk data layers\n");
+    out.push_str("The following risk overlay tables are loaded and available for spatial joins:\n\n");
+
+    for (table_name, schema) in risk_tables {
+        out.push_str(&format!("### Table: \"{}\"\n", table_name));
+        for col in schema {
+            out.push_str(&format!(
+                "  - \"{}\" {} (not_null: {}, primary_key: {})\n",
+                col.name, col.data_type, col.notnull, col.primary_key
+            ));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("Use these risk layers in spatial joins with user portfolio data. ");
+    out.push_str("Risk layer tables have a `geom` or `geometry` column for spatial operations.\n");
+    out
 }
 
 /// Detect domain-relevant columns by matching schema column names against rules.

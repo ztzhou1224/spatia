@@ -577,13 +577,13 @@ Goal: Build insurance-specific capabilities that transform Spatia from a generic
 - [x] TASK-25: Example query suggestions
 - [x] TASK-26: Increased result limits with pagination
 
-**Phase 3 — Insurance Vertical (Differentiation):**
-- [ ] TASK-27: FEMA flood zone data integration
-- [ ] TASK-28: USGS wildfire risk overlay
-- [ ] TASK-29: Insurance-specific AI prompts
-- [ ] TASK-30: Guided risk assessment workflow
-- [ ] TASK-31: PDF risk assessment report
-- [ ] TASK-32: Multi-layer map with visibility controls
+**Phase 3 — Insurance Vertical (Differentiation): COMPLETE**
+- [x] TASK-27: FEMA flood zone data integration
+- [x] TASK-28: USGS wildfire risk overlay
+- [x] TASK-29: Insurance-specific AI prompts
+- [x] TASK-30: Guided risk assessment workflow
+- [x] TASK-31: PDF risk assessment report
+- [x] TASK-32: Multi-layer map with visibility controls
 
 **DEFERRED:**
 - [ ] TASK-P0-3: WebDriver E2E test infrastructure

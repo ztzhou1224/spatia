@@ -1196,7 +1196,7 @@ async fn chat_turn(
         }
     }
 
-    // Build domain context (prompt extension + detected columns)
+    // Build domain context (prompt extension + detected columns + risk layers)
     let pack = active_domain_pack();
     let domain_context = {
         let mut ctx = pack.system_prompt_extension.clone();
@@ -1212,6 +1212,28 @@ async fn chat_turn(
                 ctx.push_str(&annotations);
             }
         }
+
+        // Detect and inject risk layer schemas so the AI can use them in spatial joins
+        if let Ok(conn) = duckdb::Connection::open(db_path()) {
+            if let Ok(risk_layers) = spatia_engine::list_risk_layers(&conn) {
+                if !risk_layers.is_empty() {
+                    let mut risk_table_schemas = Vec::new();
+                    for layer in &risk_layers {
+                        let risk_table = format!("risk_{}", layer.name);
+                        if let Ok(schema) = spatia_engine::table_schema(db_path(), &risk_table) {
+                            risk_table_schemas.push((risk_table, schema));
+                        }
+                    }
+                    let risk_context = spatia_engine::format_risk_layer_context(&risk_table_schemas);
+                    if !risk_context.is_empty() {
+                        ctx.push_str(&risk_context);
+                    }
+                    // Also include risk layer tables in the schemas list so the AI can reference them
+                    table_schemas.extend(risk_table_schemas);
+                }
+            }
+        }
+
         if ctx.is_empty() { None } else { Some(ctx) }
     };
 
@@ -1462,6 +1484,79 @@ async fn chat_turn(
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
+// ---- Risk layer commands ----
+
+#[tauri::command]
+fn load_risk_layer(
+    file_path: String,
+    layer_name: String,
+    display_name: String,
+    layer_type: String,
+    source: String,
+) -> Result<String, String> {
+    info!(
+        layer_name = %layer_name,
+        display_name = %display_name,
+        layer_type = %layer_type,
+        source = %source,
+        file_path = %file_path,
+        "load_risk_layer: starting"
+    );
+
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    let info = spatia_engine::ingest_risk_layer(
+        &conn,
+        &file_path,
+        &layer_name,
+        &display_name,
+        &layer_type,
+        &source,
+    )
+    .map_err(|e| {
+        error!(layer_name = %layer_name, error = %e, "load_risk_layer: failed");
+        e.to_string()
+    })?;
+
+    info!(layer_name = %layer_name, row_count = info.row_count, "load_risk_layer: completed");
+    serde_json::to_string(&info).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_risk_layers() -> Result<String, String> {
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    let layers = spatia_engine::list_risk_layers(&conn).map_err(|e| e.to_string())?;
+    serde_json::to_string(&layers).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_risk_layer(layer_name: String) -> Result<String, String> {
+    info!(layer_name = %layer_name, "remove_risk_layer: starting");
+
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    spatia_engine::remove_risk_layer(&conn, &layer_name).map_err(|e| {
+        error!(layer_name = %layer_name, error = %e, "remove_risk_layer: failed");
+        e.to_string()
+    })?;
+
+    info!(layer_name = %layer_name, "remove_risk_layer: completed");
+    let json = serde_json::json!({ "status": "ok", "layer": layer_name });
+    serde_json::to_string(&json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn risk_layer_geojson(layer_name: String, limit: Option<usize>) -> Result<String, String> {
+    info!(layer_name = %layer_name, limit = ?limit, "risk_layer_geojson: starting");
+
+    let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    let geojson = spatia_engine::risk_layer_to_geojson(&conn, &layer_name, limit).map_err(|e| {
+        error!(layer_name = %layer_name, error = %e, "risk_layer_geojson: failed");
+        e.to_string()
+    })?;
+
+    info!(layer_name = %layer_name, "risk_layer_geojson: completed");
+    Ok(geojson)
+}
+
 // ---- Log path ----
 
 #[tauri::command]
@@ -1497,6 +1592,21 @@ fn save_file(file_path: String, data: String) -> Result<(), String> {
         .decode(b64)
         .map_err(|e| e.to_string())?;
     std::fs::write(&file_path, bytes).map_err(|e| e.to_string())
+}
+
+// ---- Report generation ----
+
+#[tauri::command]
+fn generate_risk_report(report_data_json: String, output_path: String) -> Result<(), String> {
+    info!(output_path = %output_path, "generate_risk_report: starting");
+    let data: spatia_engine::ReportData =
+        serde_json::from_str(&report_data_json).map_err(|e| format!("Invalid report data: {e}"))?;
+    spatia_engine::generate_risk_report(&data, &output_path).map_err(|e| {
+        error!(error = %e, "generate_risk_report: failed");
+        e.to_string()
+    })?;
+    info!(output_path = %output_path, "generate_risk_report: completed");
+    Ok(())
 }
 
 // ---- Settings / API key management ----
@@ -1732,6 +1842,11 @@ pub fn run() {
                     save_api_key,
                     get_api_key,
                     delete_api_key,
+                    load_risk_layer,
+                    list_risk_layers,
+                    remove_risk_layer,
+                    risk_layer_geojson,
+                    generate_risk_report,
                     write_debug_snapshot
                 ]
             }
@@ -1763,7 +1878,12 @@ pub fn run() {
                     save_file,
                     save_api_key,
                     get_api_key,
-                    delete_api_key
+                    delete_api_key,
+                    load_risk_layer,
+                    list_risk_layers,
+                    remove_risk_layer,
+                    risk_layer_geojson,
+                    generate_risk_report
                 ]
             }
         })

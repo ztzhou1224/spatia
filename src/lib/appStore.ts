@@ -56,6 +56,15 @@ export type ApiConfig = {
   geocodio: boolean;
 };
 
+export type RiskLayerInfo = {
+  name: string;
+  display_name: string;
+  layer_type: string;
+  source: string;
+  row_count: number;
+  has_geometry: boolean;
+};
+
 export type DomainPackConfig = {
   id: string;
   display_name: string;
@@ -107,6 +116,12 @@ type AppStore = {
   basemapId: string;
   settingsOpen: boolean;
   analysisTotalCount: number | null;
+  layerVisibility: Record<string, boolean>;
+  layerOpacity: Record<string, number>;
+  riskLayers: RiskLayerInfo[];
+  riskLayerGeoJson: Record<string, unknown>;
+  workflowOpen: boolean;
+  workflowStep: number;
 
   addTable: (table: TableInfo) => void;
   updateTable: (name: string, patch: Partial<TableInfo>) => void;
@@ -131,6 +146,15 @@ type AppStore = {
   setBasemapId: (id: string) => void;
   setSettingsOpen: (open: boolean) => void;
   setAnalysisTotalCount: (count: number | null) => void;
+  setLayerVisibility: (layerId: string, visible: boolean) => void;
+  setLayerOpacity: (layerId: string, opacity: number) => void;
+  toggleLayerVisibility: (layerId: string) => void;
+  setRiskLayers: (layers: RiskLayerInfo[]) => void;
+  setRiskLayerGeoJson: (name: string, geojson: unknown) => void;
+  clearRiskLayerGeoJson: (name: string) => void;
+  fetchRiskLayers: () => Promise<void>;
+  setWorkflowOpen: (open: boolean) => void;
+  setWorkflowStep: (step: number) => void;
 };
 
 const storeInitializer: StateCreator<AppStore> = (set) => ({
@@ -149,6 +173,12 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   basemapId: (typeof localStorage !== "undefined" ? localStorage.getItem("basemapId") : null) ?? "dark",
   settingsOpen: false,
   analysisTotalCount: null,
+  layerVisibility: {},
+  layerOpacity: {},
+  riskLayers: [],
+  riskLayerGeoJson: {},
+  workflowOpen: false,
+  workflowStep: 0,
 
   addTable: (table) =>
     set((state) => ({ tables: [...state.tables, table] })),
@@ -267,6 +297,49 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   },
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setAnalysisTotalCount: (count) => set({ analysisTotalCount: count }),
+  setLayerVisibility: (layerId, visible) =>
+    set((state) => ({
+      layerVisibility: { ...state.layerVisibility, [layerId]: visible },
+    })),
+  setLayerOpacity: (layerId, opacity) =>
+    set((state) => ({
+      layerOpacity: { ...state.layerOpacity, [layerId]: opacity },
+    })),
+  toggleLayerVisibility: (layerId) =>
+    set((state) => ({
+      layerVisibility: {
+        ...state.layerVisibility,
+        [layerId]:
+          state.layerVisibility[layerId] === false
+            ? true
+            : state.layerVisibility[layerId] === undefined
+              ? false
+              : !state.layerVisibility[layerId],
+      },
+    })),
+  setRiskLayers: (layers) => set({ riskLayers: layers }),
+  setRiskLayerGeoJson: (name, geojson) =>
+    set((state) => ({
+      riskLayerGeoJson: { ...state.riskLayerGeoJson, [name]: geojson },
+    })),
+  clearRiskLayerGeoJson: (name) =>
+    set((state) => {
+      const next = { ...state.riskLayerGeoJson };
+      delete next[name];
+      return { riskLayerGeoJson: next };
+    }),
+  fetchRiskLayers: async () => {
+    if (!isTauri()) return;
+    try {
+      const raw = await invoke<string>("list_risk_layers");
+      const layers = JSON.parse(raw) as RiskLayerInfo[];
+      set({ riskLayers: layers });
+    } catch {
+      // Non-fatal
+    }
+  },
+  setWorkflowOpen: (open) => set({ workflowOpen: open }),
+  setWorkflowStep: (step) => set({ workflowStep: step }),
 });
 
 export const useAppStore = create<AppStore>(storeInitializer);

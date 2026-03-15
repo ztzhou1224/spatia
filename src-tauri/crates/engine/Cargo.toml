@@ -13,3 +13,5 @@ regex = "1"
 spatia_geocode = { path = "../geocode" }
 spatia_ingest = { path = "../ingest" }
 spatia_overture = { path = "../overture" }
+printpdf = "0.7"
+chrono = "0.4"

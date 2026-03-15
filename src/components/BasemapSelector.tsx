@@ -6,7 +6,7 @@ const BASEMAP_OPTIONS = [
   { id: "osm", label: "OSM" },
 ] as const;
 
-export function BasemapSelector() {
+export function BasemapSelector({ left = 10 }: { left?: number }) {
   const basemapId = useAppStore((s) => s.basemapId);
   const setBasemapId = useAppStore((s) => s.setBasemapId);
 
@@ -15,7 +15,7 @@ export function BasemapSelector() {
       style={{
         position: "absolute",
         top: 10,
-        left: 10,
+        left,
         zIndex: 5,
         display: "flex",
         gap: 1,

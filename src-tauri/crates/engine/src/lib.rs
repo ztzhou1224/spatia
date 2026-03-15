@@ -4,6 +4,8 @@ pub mod domain_pack;
 mod executor;
 mod export;
 mod identifiers;
+mod report;
+pub mod risk_layers;
 mod schema;
 mod types;
 
@@ -36,9 +38,14 @@ pub use schema::raw_staging_schema;
 pub use schema::table_schema;
 pub use schema::TableColumn;
 pub use domain_pack::{
-    detect_domain_columns, format_domain_column_annotations, ColumnDetectionRule, DomainPack,
-    UiConfig,
+    detect_domain_columns, format_domain_column_annotations, format_risk_layer_context,
+    ColumnDetectionRule, DomainPack, UiConfig,
 };
+pub use report::{generate_risk_report, ReportData, ReportRiskSummary};
 pub use export::{export_analysis_geojson, export_table_csv};
 pub use identifiers::validate_table_name;
+pub use risk_layers::{
+    ensure_risk_registry, ingest_risk_layer, list_risk_layers, remove_risk_layer,
+    risk_layer_to_geojson, RiskLayerInfo,
+};
 pub use types::EngineResult;
