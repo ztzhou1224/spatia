@@ -271,7 +271,14 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
 
     const selected = await open({
       multiple: true,
-      filters: [{ name: "CSV", extensions: ["csv"] }],
+      filters: [
+        { name: "All Supported", extensions: ["csv", "geojson", "json", "shp", "gpkg", "fgb"] },
+        { name: "CSV", extensions: ["csv"] },
+        { name: "GeoJSON", extensions: ["geojson", "json"] },
+        { name: "Shapefile", extensions: ["shp"] },
+        { name: "GeoPackage", extensions: ["gpkg"] },
+        { name: "FlatGeobuf", extensions: ["fgb"] },
+      ],
     });
 
     if (!selected) return;
@@ -311,6 +318,7 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
           row_count: number;
           clean_summary: string;
           address_columns: string[];
+          has_geometry?: boolean;
         };
 
         // "ready" means address columns were detected — wait for user to confirm geocoding
@@ -323,6 +331,11 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
           progressMessage: undefined,
           progressPercent: 100,
         });
+
+        // Spatial files with native geometry — auto-display on map
+        if (result.has_geometry) {
+          void loadTableGeoJson(tableName, setTableGeoJson);
+        }
       } catch (err) {
         updateTable(tableName, {
           status: "error",
@@ -514,7 +527,7 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
               onClick={() => void handleAddFiles()}
               style={{ minWidth: "160px" }}
             >
-              + Upload a CSV file
+              + Upload a file
             </Button>
           )}
         </div>

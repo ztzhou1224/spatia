@@ -78,6 +78,12 @@ const BUILDINGS_SOURCE_ID = "buildings-3d";
 const BUILDINGS_LAYER_ID = "buildings-3d-layer";
 const BUILDINGS_MIN_ZOOM = 14;
 
+// Prefix for MapLibre table geometry layers (polygon/line data from spatial files)
+const TABLE_SOURCE_PREFIX = "table-geom-";
+const TABLE_FILL_PREFIX = "table-fill-";
+const TABLE_LINE_PREFIX = "table-line-";
+const TABLE_CIRCLE_PREFIX = "table-circle-";
+
 // Blue color for table data points (distinct from purple analysis results)
 const TABLE_POINT_COLOR: [number, number, number, number] = [37, 99, 235, 200];
 
@@ -508,6 +514,128 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
     deckOverlayRef.current.setProps({ layers });
   }, [analysisGeoJson, visualizationType, tableGeoJson]);
 
+  // MapLibre layers for table polygon/line geometries (spatial file imports)
+  // Points are handled by Deck.gl ScatterplotLayer above; polygons and lines
+  // need MapLibre fill/line layers for proper rendering.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    // Track which table sources currently exist so we can remove stale ones
+    const activeSources = new Set<string>();
+
+    for (const [tableName, rawFc] of Object.entries(tableGeoJson)) {
+      const fc = rawFc as GeoJSON.FeatureCollection;
+      if (!fc.features?.length) continue;
+
+      // Check if this table has any non-point geometries
+      const hasNonPointGeom = fc.features.some(
+        (f) => f.geometry && f.geometry.type !== "Point"
+      );
+      if (!hasNonPointGeom) continue;
+
+      const sourceId = `${TABLE_SOURCE_PREFIX}${tableName}`;
+      const fillId = `${TABLE_FILL_PREFIX}${tableName}`;
+      const lineId = `${TABLE_LINE_PREFIX}${tableName}`;
+      const circleId = `${TABLE_CIRCLE_PREFIX}${tableName}`;
+      activeSources.add(sourceId);
+
+      if (!map.getSource(sourceId)) {
+        map.addSource(sourceId, { type: "geojson", data: fc });
+      } else {
+        (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(fc);
+      }
+
+      // Fill layer for polygons
+      if (!map.getLayer(fillId)) {
+        map.addLayer({
+          id: fillId,
+          type: "fill",
+          source: sourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          paint: {
+            "fill-color": "#2563eb",
+            "fill-opacity": 0.25,
+          },
+        });
+      }
+
+      // Line layer for lines and polygon outlines
+      if (!map.getLayer(lineId)) {
+        map.addLayer({
+          id: lineId,
+          type: "line",
+          source: sourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+          paint: {
+            "line-color": "#2563eb",
+            "line-width": 1.5,
+            "line-opacity": 0.7,
+          },
+        });
+      }
+
+      // Circle layer for points in spatial files (rendered via MapLibre alongside polygons)
+      if (!map.getLayer(circleId)) {
+        map.addLayer({
+          id: circleId,
+          type: "circle",
+          source: sourceId,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-radius": 5,
+            "circle-color": "#2563eb",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#fff",
+            "circle-opacity": 0.8,
+          },
+        });
+      }
+
+      // Auto-fit bounds to show table data
+      const bounds = new maplibregl.LngLatBounds();
+      let hasCoords = false;
+      for (const f of fc.features) {
+        if (!f.geometry) continue;
+        const addCoords = (coords: number[]) => {
+          bounds.extend(coords as [number, number]);
+          hasCoords = true;
+        };
+        const walkCoords = (coords: unknown, depth: number): void => {
+          if (depth === 0) addCoords(coords as number[]);
+          else for (const c of coords as unknown[]) walkCoords(c, depth - 1);
+        };
+        const g = f.geometry as { type: string; coordinates: unknown };
+        switch (g.type) {
+          case "Point": walkCoords(g.coordinates, 0); break;
+          case "MultiPoint":
+          case "LineString": walkCoords(g.coordinates, 1); break;
+          case "MultiLineString":
+          case "Polygon": walkCoords(g.coordinates, 2); break;
+          case "MultiPolygon": walkCoords(g.coordinates, 3); break;
+        }
+      }
+      if (hasCoords && !bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 1000 });
+      }
+    }
+
+    // Remove stale table geometry layers/sources (tables that were deleted)
+    const style = map.getStyle();
+    if (style?.sources) {
+      for (const srcId of Object.keys(style.sources)) {
+        if (srcId.startsWith(TABLE_SOURCE_PREFIX) && !activeSources.has(srcId)) {
+          const tName = srcId.slice(TABLE_SOURCE_PREFIX.length);
+          for (const prefix of [TABLE_FILL_PREFIX, TABLE_LINE_PREFIX, TABLE_CIRCLE_PREFIX]) {
+            const layerId = `${prefix}${tName}`;
+            if (map.getLayer(layerId)) map.removeLayer(layerId);
+          }
+          map.removeSource(srcId);
+        }
+      }
+    }
+  }, [tableGeoJson]);
+
   async function handleExportPng() {
     if (!mapRef.current || !containerRef.current) return;
     setExporting(true);
@@ -616,7 +744,7 @@ export const MapView = forwardRef<MapViewHandle>(function MapView(_props, ref) {
               Your data will appear here
             </div>
             <div className="text-xs text-muted-foreground">
-              Upload a CSV to plot locations on the map
+              Upload a CSV, GeoJSON, or Shapefile to plot data on the map
             </div>
           </div>
         </div>
