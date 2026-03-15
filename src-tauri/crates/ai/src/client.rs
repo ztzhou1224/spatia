@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 
@@ -91,7 +93,11 @@ impl GeminiClient {
         Self {
             api_key: api_key.into(),
             model: DEFAULT_MODEL.to_string(),
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(90))
+                .build()
+                .unwrap_or_default(),
             temperature: None,
         }
     }
@@ -101,7 +107,11 @@ impl GeminiClient {
         Self {
             api_key: api_key.into(),
             model: model.into(),
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(90))
+                .build()
+                .unwrap_or_default(),
             temperature: None,
         }
     }

@@ -216,8 +216,46 @@ pub fn build_analysis_retry_prompt_with_domain(
     )
 }
 
+/// Build a single batch retry prompt for multiple failed statements.
+///
+/// Instead of sending N individual retry requests (one per failure), this
+/// batches all failures into a single prompt. This reduces API round-trips
+/// from N to 1, saving 3–8 seconds per avoided call.
+pub fn build_clean_batch_retry_prompt(failures: &[(String, String)]) -> String {
+    let mut failure_section = String::new();
+    for (i, (sql, error)) in failures.iter().enumerate() {
+        failure_section.push_str(&format!(
+            "### Statement {n}\nSQL: {sql}\nError: {error}\n\n",
+            n = i + 1,
+            sql = sql,
+            error = error,
+        ));
+    }
+
+    format!(
+        r#"The following DuckDB UPDATE statements failed with errors. Fix each one.
+
+{failures}
+## Rules
+- Return one corrected UPDATE statement per failed statement above, in the same order.
+- Each statement on its own line, ending with a semicolon.
+- No markdown fences, no explanations, no numbering.
+- ALWAYS double-quote every column name (e.g. "city", "wind_deductible_pct").
+- DO NOT use: INITCAP, STRING_SPLIT_BY_REGEX, ARRAY_JOIN, or \m regex (PostgreSQL-only).
+- For multi-word title case use this exact pattern:
+    ARRAY_TO_STRING(LIST_TRANSFORM(STRING_SPLIT(LOWER(TRIM("col")), ' '), x -> CONCAT(UPPER(x[1]), x[2:])), ' ')
+- For regex word boundaries use \b (RE2), NOT \m.
+- Use ARRAY_TO_STRING (not ARRAY_JOIN) to join lists.
+- Use STRING_SPLIT (not STRING_SPLIT_BY_REGEX) to split strings.
+- Use TRY_CAST instead of CAST when converting types to avoid errors on bad data.
+"#,
+        failures = failure_section,
+    )
+}
+
 /// Build a retry prompt that feeds a failed DuckDB statement and its error back
 /// to the AI, asking for a corrected version.
+#[cfg(test)]
 pub fn build_clean_retry_prompt(failed_sql: &str, error_message: &str) -> String {
     format!(
         r#"The following DuckDB UPDATE statement failed with an error.
