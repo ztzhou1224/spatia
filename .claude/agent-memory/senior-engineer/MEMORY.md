@@ -10,12 +10,14 @@
 | `src-tauri/crates/engine/src/analysis.rs` | `execute_analysis_sql_to_geojson` |
 | `src-tauri/crates/engine/src/geocode.rs` | Batch geocoding; local Overture + Geocodio fallback |
 | `src-tauri/crates/ai/src/client.rs` | Gemini HTTP client (feature-gated `gemini`) |
-| `src/lib/appStore.ts` | Zustand store — tables, chatMessages, analysisGeoJson, mapActions, logPath |
+| `src/lib/appStore.ts` | Zustand store — tables, chatMessages, analysisGeoJson, mapActions, logPath, workflowOpen, workflowStep, riskLayers, riskLayerGeoJson, settingsOpen |
 | `src/lib/mapActions.ts` | Map imperative actions (via MapViewHandle ref) |
 | `src/lib/tauri.ts` | `isTauri()` guard; import `invoke` from `@tauri-apps/api/core` |
 | `src/components/MapView.tsx` | Map component; exposes `MapViewHandle` ref |
 | `src/components/ChatCard.tsx` | AI chat UI; reads from appStore |
 | `src/components/FileList.tsx` | Uploaded files list |
+| `src/components/SettingsPanel.tsx` | Modal overlay pattern reference (fixed inset, backdrop blur) |
+| `src/components/RiskWorkflow.tsx` | 5-step guided risk assessment wizard (TASK-30) |
 | `src/lib/debug.ts` | DEV-only `installDebugSnapshot()` — call from main.tsx; exposes `window.__spatia_debug_snapshot()` |
 | `scripts/dump-ui-state.sh` | Shell script that triggers snapshot via osascript JXA and reads `scripts/screenshots/ui-state.json` |
 
