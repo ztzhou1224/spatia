@@ -44,6 +44,13 @@
 - `installDebugSnapshot()` in `debug.ts` is gated behind `import.meta.env.DEV`; must be called from `main.tsx` before `ReactDOM.createRoot`.
 - Snapshot writes to `scripts/screenshots/ui-state.json` (relative to process cwd; `write_debug_snapshot` tries `<cwd>/scripts/screenshots` then `<cwd>/../scripts/screenshots`).
 
+## SQL Injection Prevention in preview_table
+
+- **Column names**: Cannot be parameterized. Validate against `col_names` from schema (whitelist check: `col_names.iter().any(|c| c == input)`).
+- **Table names**: Validate via `spatia_engine::validate_table_name` (allows `[a-zA-Z_][a-zA-Z0-9_]*` only).
+- **Filter values**: Escape single-quotes with `fv.replace('\'', "''")` then interpolate into `ILIKE '%value%'`. ILIKE handles wildcards safely when the delimiters are literal `%`.
+- **Sort direction**: Whitelist — only accept `"desc"` → `DESC`, default anything else to `ASC`.
+
 ## Gotchas
 
 - `PRAGMA table_info` boolean columns deserialize as Rust `bool`, not the string `"BOOLEAN"`.

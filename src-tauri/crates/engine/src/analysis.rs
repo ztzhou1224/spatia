@@ -856,17 +856,17 @@ mod tests {
         cleanup_temp_db(&db_path);
     }
 
-    /// TC-011-05: When the result set exceeds 20 rows, tabular output is truncated
-    /// to exactly 20 rows and `truncated` is set to true.
-    /// GeoJSON fetches up to 1000 rows so it should contain all 30.
+    /// TC-011-05: When the result set exceeds 100 rows, tabular output is truncated
+    /// to exactly 100 rows and `truncated` is set to true.
+    /// GeoJSON fetches up to 5000 rows so it should contain all 110.
     #[test]
-    fn tabular_result_is_truncated_at_twenty_rows() {
+    fn tabular_result_is_truncated_at_hundred_rows() {
         let db_path = temp_db_path();
         let conn = Connection::open(&db_path).expect("open db");
-        // Insert 30 rows
+        // Insert 110 rows
         conn.execute_batch("CREATE TABLE nums(n INTEGER)")
             .expect("create table");
-        for i in 0..30_i32 {
+        for i in 0..110_i32 {
             conn.execute("INSERT INTO nums VALUES (?)", [i])
                 .expect("insert");
         }
@@ -875,16 +875,16 @@ mod tests {
         let sql = "CREATE OR REPLACE VIEW analysis_result AS SELECT n FROM nums";
         let result = execute_analysis_sql_to_geojson(&db_path, sql).expect("execute");
 
-        // Tabular is capped at 20
+        // Tabular is capped at 100
         assert_eq!(
             result.tabular.rows.len(),
-            20,
-            "tabular rows should be truncated to 20"
+            100,
+            "tabular rows should be truncated to 100"
         );
         assert!(result.tabular.truncated, "truncated flag must be true");
 
-        // GeoJSON side fetches up to 1000 — all 30 should be present
-        assert_eq!(result.row_count, 30);
+        // GeoJSON side fetches up to 5000 — all 110 should be present
+        assert_eq!(result.row_count, 110);
 
         cleanup_temp_db(&db_path);
     }
