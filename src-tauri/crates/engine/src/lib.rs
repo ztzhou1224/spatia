@@ -17,7 +17,7 @@ pub use spatia_geocode::{
 pub use spatia_geocode::search_index;
 
 // Re-export ingest crate's public API
-pub use spatia_ingest::{ingest_csv, ingest_csv_to_table};
+pub use spatia_ingest::{ingest_csv, ingest_csv_to_table, ingest_spatial_file, is_spatial_file};
 
 // Re-export overture crate's public API
 pub use spatia_overture::{

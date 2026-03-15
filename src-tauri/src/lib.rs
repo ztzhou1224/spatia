@@ -503,21 +503,40 @@ fn table_to_geojson(table_name: String) -> Result<String, String> {
     spatia_engine::validate_table_name(&table_name).map_err(|e| e.to_string())?;
 
     let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
+    conn.execute("LOAD spatial", []).map_err(|e| e.to_string())?;
 
-    // Check that _lat and _lon columns exist
     let schema =
         spatia_engine::table_schema(db_path(), &table_name).map_err(|e| e.to_string())?;
     let col_names: Vec<String> = schema.iter().map(|c| c.name.clone()).collect();
+    let col_types: Vec<String> = schema.iter().map(|c| c.data_type.clone()).collect();
+
+    // Detect geometry column (from spatial file imports via ST_Read)
+    let geom_col = col_names
+        .iter()
+        .zip(col_types.iter())
+        .find(|(name, dtype)| {
+            let dt = dtype.to_uppercase();
+            dt.contains("GEOMETRY") || dt.contains("WKB_GEOMETRY")
+                || ["geom", "geometry", "wkb_geometry", "the_geom", "shape"]
+                    .contains(&name.to_lowercase().as_str())
+        })
+        .map(|(name, _)| name.clone());
+
     let has_lat = col_names.iter().any(|c| c == "_lat");
     let has_lon = col_names.iter().any(|c| c == "_lon");
 
-    if !has_lat || !has_lon {
-        // No geocoded columns — return empty FeatureCollection
+    if geom_col.is_none() && (!has_lat || !has_lon) {
+        // No geometry data at all — return empty FeatureCollection
         let fc = serde_json::json!({ "type": "FeatureCollection", "features": [] });
         return serde_json::to_string(&fc).map_err(|e| e.to_string());
     }
 
-    // Property columns: everything except _lat and _lon themselves
+    // Branch: native geometry column (spatial file) vs _lat/_lon (geocoded CSV)
+    if let Some(ref gcol) = geom_col {
+        return table_geom_to_geojson(&conn, &table_name, gcol, &col_names);
+    }
+
+    // Fallback: _lat/_lon point columns
     let prop_cols: Vec<String> = col_names
         .iter()
         .filter(|c| c.as_str() != "_lat" && c.as_str() != "_lon")
@@ -568,6 +587,75 @@ fn table_to_geojson(table_name: String) -> Result<String, String> {
                 "type": "Point",
                 "coordinates": [lon, lat]
             },
+            "properties": props,
+        }));
+    }
+
+    let fc = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+    });
+    serde_json::to_string(&fc).map_err(|e| e.to_string())
+}
+
+/// Convert a table with a native GEOMETRY column to GeoJSON using ST_AsGeoJSON.
+fn table_geom_to_geojson(
+    conn: &duckdb::Connection,
+    table_name: &str,
+    geom_col: &str,
+    all_cols: &[String],
+) -> Result<String, String> {
+    // Property columns: everything except the geometry column
+    let prop_cols: Vec<String> = all_cols
+        .iter()
+        .filter(|c| c.as_str() != geom_col)
+        .cloned()
+        .collect();
+
+    let prop_select = if prop_cols.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ", {}",
+            prop_cols
+                .iter()
+                .map(|c| format!(r#"CAST("{c}" AS VARCHAR) AS "{c}""#))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    let sql = format!(
+        r#"SELECT ST_AsGeoJSON("{gcol}") AS _geojson_geom{prop_select}
+           FROM "{table}"
+           WHERE "{gcol}" IS NOT NULL
+           LIMIT 10000"#,
+        gcol = geom_col,
+        table = table_name,
+    );
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+
+    let mut features: Vec<serde_json::Value> = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let geojson_str: String = row.get::<_, String>(0).map_err(|e| e.to_string())?;
+        let geometry: serde_json::Value =
+            serde_json::from_str(&geojson_str).map_err(|e| e.to_string())?;
+
+        let mut props = serde_json::Map::new();
+        for (i, col) in prop_cols.iter().enumerate() {
+            let val: Option<String> = row.get(i + 1).ok();
+            props.insert(
+                col.clone(),
+                val.map(serde_json::Value::String)
+                    .unwrap_or(serde_json::Value::Null),
+            );
+        }
+
+        features.push(serde_json::json!({
+            "type": "Feature",
+            "geometry": geometry,
             "properties": props,
         }));
     }
@@ -826,63 +914,79 @@ async fn ingest_file_pipeline(
     let handle = tokio::runtime::Handle::current();
 
     let join_result = tokio::task::spawn_blocking(move || {
+        let is_spatial = spatia_engine::is_spatial_file(&csv_path);
+
         // Step 1: ingest
-        emit_ingest_progress(&app, &table_name, "started", "Starting CSV ingestion", 5)?;
+        let file_type_label = if is_spatial { "spatial file" } else { "CSV" };
+        emit_ingest_progress(&app, &table_name, "started", format!("Starting {file_type_label} ingestion"), 5)?;
         emit_ingest_progress(&app, &table_name, "reading", format!("Reading file: {csv_path}"), 30)?;
 
-        spatia_engine::ingest_csv_to_table(db_path(), &csv_path, &table_name)
-            .map_err(|e| e.to_string())?;
+        if is_spatial {
+            spatia_engine::ingest_spatial_file(db_path(), &csv_path, &table_name)
+                .map_err(|e| e.to_string())?;
+        } else {
+            spatia_engine::ingest_csv_to_table(db_path(), &csv_path, &table_name)
+                .map_err(|e| e.to_string())?;
+        }
 
         emit_ingest_progress(&app, &table_name, "writing", format!("Loaded table: {table_name}"), 50)?;
 
-        // Step 2: AI clean
-        emit_ingest_progress(&app, &table_name, "cleaning", "Starting AI clean...", 55)?;
+        // Step 2: AI clean (skip for spatial files — geometry data doesn't benefit from text cleaning)
+        let clean_summary = if is_spatial {
+            "skipped (spatial file)".to_string()
+        } else {
+            emit_ingest_progress(&app, &table_name, "cleaning", "Starting AI clean...", 55)?;
 
-        // clean_table internally runs up to 3 rounds with early exit.
-        // Call it once — no outer loop needed.
-        let clean_summary = match spatia_ai::GeminiClient::from_env() {
-            Ok(client) => {
-                let result = handle.block_on(
-                    spatia_ai::clean_table(db_path(), &table_name, &client),
-                )
-                .map_err(|e| e.to_string())?;
+            // clean_table internally runs up to 3 rounds with early exit.
+            // Call it once — no outer loop needed.
+            match spatia_ai::GeminiClient::from_env() {
+                Ok(client) => {
+                    let result = handle.block_on(
+                        spatia_ai::clean_table(db_path(), &table_name, &client),
+                    )
+                    .map_err(|e| e.to_string())?;
 
-                let total_statements = result.statements_applied.len();
-                format!("{total_statements} statement(s) applied")
+                    let total_statements = result.statements_applied.len();
+                    format!("{total_statements} statement(s) applied")
+                }
+                Err(_) => "skipped (no API key)".to_string(),
             }
-            Err(_) => "skipped (no API key)".to_string(),
         };
 
         emit_ingest_progress(&app, &table_name, "detecting", "Detecting address columns...", 85)?;
 
-        // Step 3: detect address columns
-        let schema =
-            spatia_engine::table_schema(db_path(), &table_name).map_err(|e| e.to_string())?;
-        let address_columns: Vec<String> = schema
-            .into_iter()
-            .filter(|col| {
-                let name = col.name.to_lowercase();
-                let dtype = col.data_type.to_lowercase();
-                if !dtype.contains("varchar")
-                    && !dtype.contains("text")
-                    && !dtype.contains("string")
-                {
-                    return false;
-                }
-                if ["ip", "email", "url", "web"]
-                    .iter()
-                    .any(|p| name.contains(p))
-                {
-                    return false;
-                }
-                ["address", "addr", "street", "location", "place"]
-                    .iter()
-                    .any(|p| name.contains(p))
-                    || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
-                        .contains(&name.as_str())
-            })
-            .map(|col| col.name)
-            .collect();
+        // Step 3: detect address columns (skip for spatial files — they already have geometry)
+        let address_columns: Vec<String> = if is_spatial {
+            Vec::new()
+        } else {
+            let schema =
+                spatia_engine::table_schema(db_path(), &table_name).map_err(|e| e.to_string())?;
+            schema
+                .into_iter()
+                .filter(|col| {
+                    let name = col.name.to_lowercase();
+                    let dtype = col.data_type.to_lowercase();
+                    if !dtype.contains("varchar")
+                        && !dtype.contains("text")
+                        && !dtype.contains("string")
+                    {
+                        return false;
+                    }
+                    if ["ip", "email", "url", "web"]
+                        .iter()
+                        .any(|p| name.contains(p))
+                    {
+                        return false;
+                    }
+                    ["address", "addr", "street", "location", "place"]
+                        .iter()
+                        .any(|p| name.contains(p))
+                        || ["city", "state", "zip", "postal", "postcode", "suburb", "neighbourhood"]
+                            .contains(&name.as_str())
+                })
+                .map(|col| col.name)
+                .collect()
+        };
 
         // Get row count
         let conn = duckdb::Connection::open(db_path()).map_err(|e| e.to_string())?;
@@ -894,10 +998,9 @@ async fn ingest_file_pipeline(
             )
             .map_err(|e| e.to_string())?;
 
-        // If address columns were detected, stop here and let the user confirm
-        // geocoding via the UI confirmation card. If no address columns, the
-        // pipeline is complete.
-        let pipeline_status = if address_columns.is_empty() { "done" } else { "ready" };
+        // Spatial files go straight to "done" (no geocoding needed — they already have geometry).
+        // CSV files with address columns go to "ready" (awaiting geocoding confirmation).
+        let pipeline_status = if is_spatial || address_columns.is_empty() { "done" } else { "ready" };
 
         emit_ingest_progress(&app, &table_name, "completed", "Pipeline complete", 100)?;
 
@@ -907,6 +1010,7 @@ async fn ingest_file_pipeline(
             "row_count": row_count,
             "clean_summary": clean_summary,
             "address_columns": address_columns,
+            "has_geometry": is_spatial,
         });
         serde_json::to_string(&json).map_err(|e| e.to_string())
     })
