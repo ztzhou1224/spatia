@@ -544,13 +544,36 @@ async fn geocode_table_column(
         ))
         .map_err(|e| e.to_string())?;
 
+        // Build the JOIN condition.  When component columns (city/state/zip)
+        // were provided the geocoder stores the composite address
+        // ("street, city, state") in result.address, so we must reconstruct
+        // the same composite from the table columns in the WHERE clause.
+        let join_expr = if have_components {
+            // Replicate the same concatenation that components_from_columns uses:
+            //   [street, city, state, zip].filter(non-empty).join(", ")
+            // DuckDB's CONCAT_WS skips NULLs but not empty strings, so we
+            // NULLIF each component to get the same behaviour.
+            let mut parts = vec![format!(r#"NULLIF("{}", '')"#, address_col)];
+            if let Some(c) = city_col.as_deref() {
+                parts.push(format!(r#"NULLIF(CAST("{c}" AS VARCHAR), '')"#));
+            }
+            if let Some(c) = state_col.as_deref() {
+                parts.push(format!(r#"NULLIF(CAST("{c}" AS VARCHAR), '')"#));
+            }
+            if let Some(c) = zip_col.as_deref() {
+                parts.push(format!(r#"NULLIF(CAST("{c}" AS VARCHAR), '')"#));
+            }
+            format!("CONCAT_WS(', ', {})", parts.join(", "))
+        } else {
+            format!(r#""{}"."{}""#, table_name, address_col)
+        };
+
         conn.execute_batch(&format!(
             r#"UPDATE "{table}" SET _lat = g.lat, _lon = g.lon,
                _geocode_source = g.source, _geocode_confidence = g.confidence,
                _gers_id = g.gers_id
-               FROM _gc g WHERE "{table}"."{col}" = g.address"#,
+               FROM _gc g WHERE {join_expr} = g.address"#,
             table = table_name,
-            col = address_col,
         ))
         .map_err(|e| e.to_string())?;
 
