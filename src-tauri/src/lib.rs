@@ -1015,13 +1015,16 @@ async fn ingest_file_pipeline(
             // Call it once — no outer loop needed.
             match spatia_ai::GeminiClient::from_env() {
                 Ok(client) => {
-                    let result = handle.block_on(
-                        spatia_ai::clean_table(db_path(), &table_name, &client),
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                    let total_statements = result.statements_applied.len();
-                    format!("{total_statements} statement(s) applied")
+                    match handle.block_on(spatia_ai::clean_table(db_path(), &table_name, &client)) {
+                        Ok(result) => {
+                            let total_statements = result.statements_applied.len();
+                            format!("{total_statements} statement(s) applied")
+                        }
+                        Err(e) => {
+                            tracing::warn!("AI cleaning failed for table '{table_name}': {e}");
+                            format!("failed: {e}")
+                        }
+                    }
                 }
                 Err(_) => "skipped (no API key)".to_string(),
             }

@@ -194,7 +194,7 @@ pub fn exact_overture_match(
     while let Some(row) = rows.next()? {
         let gers_id: String = row.get(0)?;
         let label_norm: String = row.get::<_, String>(8).unwrap_or_default();
-        let query_norm = crate::text::normalize_address(&format!("{} {} {}", number, street, postcode));
+        let query_norm = crate::text::normalize_address(&format!("{} {}", street, postcode));
         let score = crate::scoring::score_candidate(&query_norm, &label_norm);
 
         if score < 0.90 {
@@ -247,11 +247,10 @@ pub fn fuzzy_overture_match(
             filters.push(format!("postcode = '{}'", pc.replace('\'', "''")));
         }
     }
-    if let Some(st) = state {
-        if !st.is_empty() {
-            filters.push(format!("upper(state) = '{}'", st.replace('\'', "''").to_uppercase()));
-        }
-    }
+    // State filter omitted: overture_addr_cache stores full state names (e.g. "Washington"),
+    // not abbreviations. When postcode is present it already pins geography precisely;
+    // when absent, token scoring handles disambiguation without a broken state filter.
+    let _ = state;
 
     // Add token LIKE filters (up to 6 tokens)
     let mut token_filters = Vec::new();
