@@ -3,7 +3,7 @@ use spatia_engine::{table_schema, TableColumn};
 use tracing::{debug, error, info, warn};
 
 use crate::client::GeminiClient;
-use crate::prompts::{build_clean_prompt, build_clean_retry_prompt};
+use crate::prompts::{build_clean_prompt, build_clean_batch_retry_prompt};
 use crate::AiResult;
 
 /// Number of sample rows fetched from the table when building the AI prompt.
@@ -11,6 +11,8 @@ const SAMPLE_ROW_COUNT: usize = 20;
 const RAW_STAGING_TABLE: &str = "raw_staging";
 /// Maximum number of cleaning rounds before stopping regardless of AI suggestions.
 const MAX_CLEAN_ROUNDS: usize = 3;
+/// If a round applies fewer than this many statements, skip subsequent rounds.
+const EARLY_EXIT_THRESHOLD: usize = 3;
 
 /// The result of a cleaning run.
 #[derive(Debug, Clone)]
@@ -293,71 +295,60 @@ pub async fn clean_table(
             try_execute_statements(&conn, table_name, &statements)
         };
 
-        // For each failed statement, ask AI to fix it, then try once more.
-        // We build all retry prompts first, then await them, then execute.
-        let mut retry_corrected: Vec<String> = Vec::new();
-        for (failed_stmt, err_msg) in &needs_retry {
-            let retry_prompt = build_clean_retry_prompt(failed_stmt, err_msg);
+        // Batch all failures into a single AI retry call instead of N serial calls.
+        let mut retry_applied: Vec<String> = Vec::new();
+        if !needs_retry.is_empty() {
+            let retry_prompt = build_clean_batch_retry_prompt(&needs_retry);
+            debug!(
+                table = %table_name,
+                failed_count = needs_retry.len(),
+                "clean_table: sending batch retry prompt to Gemini"
+            );
             match client.generate(&retry_prompt).await {
                 Err(api_err) => {
                     warn!(
                         table = %table_name,
-                        sql = %failed_stmt,
                         error = %api_err,
-                        "clean_table: AI retry request failed, skipping statement"
+                        "clean_table: batch retry API call failed, skipping all retries"
                     );
                 }
                 Ok(retry_response) => {
                     let retry_stmts = extract_sql_statements(&retry_response);
-                    let corrected = retry_stmts.into_iter().next().unwrap_or_default();
-                    if corrected.is_empty() {
-                        warn!(
-                            table = %table_name,
-                            sql = %failed_stmt,
-                            "clean_table: AI returned no corrected statement, skipping"
-                        );
-                        continue;
-                    }
-                    if let Err(e) = validate_statement(&corrected) {
-                        warn!(
-                            table = %table_name,
-                            sql = %corrected,
-                            error = %e,
-                            "clean_table: AI retry returned unsafe statement, skipping"
-                        );
-                        continue;
-                    }
-                    retry_corrected.push(corrected);
-                }
-            }
-        }
-
-        // Execute corrected retry statements synchronously (no await held).
-        let mut retry_applied: Vec<String> = Vec::new();
-        if !retry_corrected.is_empty() {
-            let conn = Connection::open(db_path)?;
-            for corrected in &retry_corrected {
-                debug!(
-                    table = %table_name,
-                    corrected_sql = %corrected,
-                    "clean_table: executing AI-corrected UPDATE statement"
-                );
-                match conn.execute_batch(corrected) {
-                    Ok(()) => {
-                        info!(
+                    // Validate and execute corrected statements on a single connection.
+                    let conn = Connection::open(db_path)?;
+                    for corrected in &retry_stmts {
+                        if let Err(e) = validate_statement(corrected) {
+                            warn!(
+                                table = %table_name,
+                                sql = %corrected,
+                                error = %e,
+                                "clean_table: AI retry returned unsafe statement, skipping"
+                            );
+                            continue;
+                        }
+                        debug!(
                             table = %table_name,
                             corrected_sql = %corrected,
-                            "clean_table: AI retry succeeded"
+                            "clean_table: executing AI-corrected UPDATE statement"
                         );
-                        retry_applied.push(corrected.clone());
-                    }
-                    Err(retry_err) => {
-                        warn!(
-                            table = %table_name,
-                            corrected_sql = %corrected,
-                            error = %retry_err,
-                            "clean_table: AI retry also failed, skipping statement"
-                        );
+                        match conn.execute_batch(corrected) {
+                            Ok(()) => {
+                                info!(
+                                    table = %table_name,
+                                    corrected_sql = %corrected,
+                                    "clean_table: AI retry succeeded"
+                                );
+                                retry_applied.push(corrected.clone());
+                            }
+                            Err(retry_err) => {
+                                warn!(
+                                    table = %table_name,
+                                    corrected_sql = %corrected,
+                                    error = %retry_err,
+                                    "clean_table: AI retry also failed, skipping statement"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -383,6 +374,19 @@ pub async fn clean_table(
 
         all_applied.extend(round_applied);
         all_applied.extend(retry_applied);
+
+        // If very few statements were applied, the data is mostly clean —
+        // skip remaining rounds to avoid unnecessary API calls.
+        if total_round_applied < EARLY_EXIT_THRESHOLD && round < MAX_CLEAN_ROUNDS {
+            info!(
+                table = %table_name,
+                round = round,
+                statements_applied = total_round_applied,
+                threshold = EARLY_EXIT_THRESHOLD,
+                "clean_table: few statements applied, skipping remaining rounds"
+            );
+            break;
+        }
     }
 
     // Re-fetch schema for caller inspection and type-drift validation.
