@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+mod db_health;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Emitter, Manager};
@@ -8,6 +10,10 @@ use tracing::{debug, error, info};
 /// Resolved at startup by `run()` → `setup` hook via Tauri's app-data dir.
 /// Falls back to the legacy relative path only if setup never ran (e.g. unit tests).
 static DB_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Result of the DB health check performed during startup.
+/// `None` means setup has not run yet (e.g. unit tests).
+static DB_HEALTH: std::sync::OnceLock<db_health::DbHealthStatus> = std::sync::OnceLock::new();
 
 /// Absolute path to the current log file. Set once in `run()` setup.
 static LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -1588,6 +1594,31 @@ fn get_domain_pack_config() -> Result<String, String> {
     serde_json::to_string(pack).map_err(|e| e.to_string())
 }
 
+// ---- DB health / recovery commands ----
+
+#[tauri::command]
+fn check_db_health_cmd() -> Result<db_health::DbHealthStatus, String> {
+    // Return the result cached at startup; fall back to a live check only if
+    // setup never ran (e.g. tests calling commands directly).
+    let status = DB_HEALTH.get().cloned().unwrap_or_else(|| {
+        db_health::check_db_health(db_path())
+    });
+    Ok(status)
+}
+
+#[tauri::command]
+fn recover_db_cmd(action: db_health::RecoveryAction) -> Result<db_health::RecoveryResult, String> {
+    let result = db_health::recover_db(db_path(), action)?;
+    // After a successful recovery, update the cached health status so
+    // subsequent calls to check_db_health_cmd reflect the new state.
+    if result.success {
+        // We can't overwrite OnceLock, but we can log. The frontend should
+        // re-invoke check_db_health_cmd after recovery to get the fresh status.
+        info!("db_health: recovery succeeded; restart the app for full operation");
+    }
+    Ok(result)
+}
+
 // ---- Debug snapshot ----
 
 /// Writes a JSON snapshot of the frontend Zustand store to
@@ -1684,6 +1715,31 @@ pub fn run() {
                 info!(db_path = %db.display(), "spatia: resolved DuckDB path");
             }
 
+            // ── DB health check ──────────────────────────────────────────────
+            // Run BEFORE any DuckDB connection is opened in the main process.
+            // A corrupt file causes DuckDB's C++ layer to call abort(); the
+            // subprocess probe in db_health isolates that crash to a child.
+            let health = db_health::check_db_health(db_path());
+            match &health {
+                db_health::DbHealthStatus::Healthy { size_bytes, .. } => {
+                    info!(db_path = db_path(), size_bytes, "spatia: DB health check passed");
+                }
+                db_health::DbHealthStatus::Missing => {
+                    info!(db_path = db_path(), "spatia: DB file not found; will create fresh");
+                }
+                db_health::DbHealthStatus::Corrupt { error, file_size } => {
+                    error!(
+                        db_path = db_path(),
+                        file_size,
+                        error,
+                        "spatia: DB health check FAILED — database appears corrupt. \
+                         Use recover_db_cmd to recover. \
+                         Normal DB operations will be unavailable until recovery."
+                    );
+                }
+            }
+            let _ = DB_HEALTH.set(health);
+
             // Inject stored API keys into env vars (if not already set)
             {
                 use tauri_plugin_store::StoreExt;
@@ -1751,6 +1807,8 @@ pub fn run() {
                     save_api_key,
                     get_api_key,
                     delete_api_key,
+                    check_db_health_cmd,
+                    recover_db_cmd,
                     write_debug_snapshot
                 ]
             }
@@ -1782,7 +1840,9 @@ pub fn run() {
                     save_file,
                     save_api_key,
                     get_api_key,
-                    delete_api_key
+                    delete_api_key,
+                    check_db_health_cmd,
+                    recover_db_cmd
                 ]
             }
         })
