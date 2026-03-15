@@ -9,9 +9,11 @@
 use std::path::Path;
 use tracing::{error, info, warn};
 
-/// Magic bytes that appear at the start of every DuckDB database file.
-/// Reference: DuckDB source `common/file_system/local_file_system.cpp`.
+/// Magic bytes that identify a DuckDB database file.
+/// In DuckDB 1.x the header is: 8 bytes (checksum/version) followed by "DUCK".
+/// We check bytes 8..12.
 const DUCKDB_MAGIC: &[u8] = b"DUCK";
+const DUCKDB_MAGIC_OFFSET: usize = 8;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "status")]
@@ -73,7 +75,8 @@ pub fn check_db_health(db_path: &str) -> DbHealthStatus {
         }
     };
 
-    if file_size < 4 {
+    let min_header_size = (DUCKDB_MAGIC_OFFSET + DUCKDB_MAGIC.len()) as u64;
+    if file_size < min_header_size {
         warn!(db_path, file_size, "db_health: file too small → Corrupt");
         return DbHealthStatus::Corrupt {
             error: format!("file too small ({file_size} bytes) to be a valid DuckDB database"),
@@ -81,10 +84,10 @@ pub fn check_db_health(db_path: &str) -> DbHealthStatus {
         };
     }
 
-    let mut header = [0u8; 4];
+    let mut buf = vec![0u8; DUCKDB_MAGIC_OFFSET + DUCKDB_MAGIC.len()];
     if let Ok(mut f) = std::fs::File::open(path) {
         use std::io::Read;
-        if f.read_exact(&mut header).is_err() {
+        if f.read_exact(&mut buf).is_err() {
             warn!(db_path, "db_health: cannot read header → Corrupt");
             return DbHealthStatus::Corrupt {
                 error: "cannot read file header".to_string(),
@@ -93,6 +96,7 @@ pub fn check_db_health(db_path: &str) -> DbHealthStatus {
         }
     }
 
+    let header = &buf[DUCKDB_MAGIC_OFFSET..DUCKDB_MAGIC_OFFSET + DUCKDB_MAGIC.len()];
     if header != DUCKDB_MAGIC {
         warn!(
             db_path,
