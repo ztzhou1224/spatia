@@ -75,7 +75,7 @@ function GeocodeStatsSummary({ stats }: { stats: GeocodeStats }) {
   if (stats.by_source.cache > 0) parts.push(`${stats.by_source.cache} cached`);
   if (stats.by_source.overture_exact > 0) parts.push(`${stats.by_source.overture_exact} exact`);
   if (stats.by_source.overture_fuzzy > 0) parts.push(`${stats.by_source.overture_fuzzy} local match`);
-  if (stats.by_source.geocodio > 0) parts.push(`${stats.by_source.geocodio} via API`);
+  if (stats.by_source.nominatim > 0) parts.push(`${stats.by_source.nominatim} via Nominatim`);
   if (stats.unresolved > 0) parts.push(`${stats.unresolved} unresolved`);
 
   const ratio = stats.total > 0 ? (stats.geocoded / stats.total) * 100 : 0;
@@ -236,6 +236,36 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
     return () => unlisten?.();
   }, [updateTable]);
 
+  // Listen for geocode-progress events (real-time Nominatim progress)
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlisten: (() => void) | undefined;
+    const attach = async () => {
+      unlisten = await listen<{
+        stage: string;
+        message: string;
+        percent: number;
+        processed?: number;
+        total?: number;
+        estimated_secs?: number;
+      }>("geocode-progress", (event) => {
+        const { message, percent } = event.payload;
+
+        // Find the table currently being geocoded
+        const geocodingTable = useAppStore.getState().tables.find((t) => t.status === "geocoding");
+        if (!geocodingTable) return;
+
+        updateTable(geocodingTable.name, {
+          progressMessage: message,
+          progressPercent: percent,
+        });
+      });
+    };
+    void attach();
+    return () => unlisten?.();
+  }, [updateTable]);
+
   async function handleAddFiles() {
     if (!isTauri()) return;
 
@@ -331,7 +361,7 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
         status: string;
         geocoded_count: number;
         total_addresses: number;
-        by_source?: { cache: number; overture_exact: number; overture_fuzzy: number; geocodio: number };
+        by_source?: { cache: number; overture_exact: number; overture_fuzzy: number; nominatim: number };
         unresolved?: number;
       };
       const geocodeStats: GeocodeStats | undefined = geocodeResult.by_source
@@ -607,11 +637,9 @@ export function FileList({ collapsed = false, onToggleCollapse, onSettingsClick 
                     <p className="text-xs text-muted-foreground">
                       Geocode these addresses to plot them on the map?
                     </p>
-                    {apiConfig !== null && !apiConfig.geocodio && (
-                      <p className="text-xs text-muted-foreground italic">
-                        Only local address matching available — set SPATIA_GEOCODIO_API_KEY for API fallback.
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground italic">
+                      Free geocoding: Overture local match + Nominatim (OSM). ~1 addr/sec for API lookups.
+                    </p>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => void handleGeocode(table)}>

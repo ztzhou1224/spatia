@@ -26,8 +26,16 @@
 - AI crate feature-gated behind `gemini` flag (default=on)
 - Analysis SQL: `CREATE [OR REPLACE] VIEW analysis_result AS ...` prefix enforced
 - Unified chat_turn: multi-table schemas + conversation history -> Gemini JSON -> SQL exec -> GeoJSON + map_actions
-- Geocoding: cache -> Overture local fuzzy -> Geocodio HTTP fallback
+- Geocoding: cache -> Overture local fuzzy -> Nominatim HTTP fallback (Geocodio feature-gated for benchmarks only)
 - All user-input SQL identifiers validated through identifiers.rs
+
+## Active Sprint (2026-03-15): Free Geocoding (Nominatim)
+- 7 tasks (TASK-NOM-01 through NOM-07), ~20h total
+- Replacing Geocodio with Nominatim as HTTP fallback (free, 1 req/sec rate limit)
+- Geocodio kept behind `geocodio` cargo feature for benchmarking
+- Background geocoding with progressive results (split fast phase + async Nominatim phase)
+- Key env vars: SPATIA_NOMINATIM_BASE_URL, SPATIA_NOMINATIM_COUNTRY
+- Parallelization: NOM-01 + NOM-02 in parallel, then NOM-03, NOM-04, NOM-05+NOM-06, NOM-07
 
 ## Testing Infrastructure (researched 2026-03-09)
 - Tauri v2 official WebDriver does NOT work on macOS (only Linux/Windows)

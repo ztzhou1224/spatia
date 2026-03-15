@@ -39,6 +39,21 @@ pub struct GeocodeStats {
     pub unresolved: usize,
 }
 
+/// Progress update emitted during geocoding (especially the Nominatim phase).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeocodeProgressUpdate {
+    /// Pipeline stage: "cache", "overture", "nominatim", "done"
+    pub stage: String,
+    /// Number of addresses processed so far in the current stage.
+    pub processed: usize,
+    /// Total addresses to process in the current stage.
+    pub total: usize,
+    /// Estimated seconds remaining (meaningful during Nominatim phase).
+    pub estimated_secs: Option<u64>,
+    /// The address currently being processed.
+    pub current_address: Option<String>,
+}
+
 impl From<GeocodeBatchResult> for GeocodeResult {
     fn from(value: GeocodeBatchResult) -> Self {
         Self {

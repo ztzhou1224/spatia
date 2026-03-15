@@ -1,6 +1,309 @@
 # Spatia Pivot Plan — BYOK AI-Native Desktop App for Insurance Underwriters
 
-## Active Sprint: Table Stakes (Phase 1) — COMPLETE
+## Active Sprint: Free Geocoding Pipeline (Nominatim)
+
+**Sprint date:** 2026-03-15
+**Goal:** Replace Geocodio with OSM Nominatim as the HTTP geocoding fallback, making Spatia's geocoding pipeline completely free for production use. Geocodio is retained for testing/benchmarking only.
+
+---
+
+## Tech Spec: Free Geocoding Pipeline (Overture + Nominatim)
+
+### Problem Statement
+
+Spatia's geocoding pipeline currently depends on Geocodio as the HTTP fallback geocoder when Overture local matching fails. Geocodio is a paid API ($0.50/1000 lookups), creating a cost barrier for users. The goal is to replace Geocodio with OSM Nominatim (free, rate-limited to 1 req/sec) as the production fallback, while keeping Geocodio available behind a feature gate for accuracy benchmarking.
+
+Key constraints:
+- Nominatim enforces a strict 1 request/second rate limit (usage policy)
+- Must provide clear UX feedback: estimated time, per-address progress
+- Must support background processing so users can interact with partially-geocoded data
+- Geocodio code must remain compilable and testable but not be part of the default production flow
+
+### Current Architecture (as-is)
+
+```
+geocode_batch_with_components()
+  |
+  +-- if SPATIA_GEOCODIO_API_KEY set && batch <= 500:
+  |     geocode_batch_api_first()    # Cache -> Overture existing -> Geocodio API -> GERS lookup
+  |
+  +-- else:
+        geocode_batch_overture_first()  # Cache -> Overture S3 download -> Overture exact/fuzzy -> local fuzzy -> Geocodio API -> GERS lookup
+```
+
+Both paths end with Geocodio as the final fallback. The Geocodio client (`geocodio.rs`) sends batch POST requests to `/v1.10/geocode`.
+
+**Key files:**
+- `src-tauri/crates/geocode/src/geocode.rs` — orchestration (`geocode_batch_*` functions)
+- `src-tauri/crates/geocode/src/geocodio.rs` — Geocodio HTTP client
+- `src-tauri/crates/geocode/src/cache.rs` — `geocode_cache` table (DuckDB)
+- `src-tauri/crates/geocode/src/overture_cache.rs` — Overture address cache + exact/fuzzy matching
+- `src-tauri/crates/geocode/src/types.rs` — `GeocodeResult`, `GeocodeBatchResult`, `GeocodeStats`
+- `src-tauri/crates/geocode/src/lib.rs` — public re-exports
+- `src-tauri/crates/geocode/Cargo.toml` — dependencies
+- `src-tauri/src/lib.rs` — `geocode_table_column` Tauri command (lines 276-497)
+- `src/components/FileList.tsx` — geocoding UI (handleGeocode, GeocodeStatsSummary)
+- `src/lib/appStore.ts` — `GeocodeStats` type, `TableInfo.geocodeStats`
+
+### Proposed Approach
+
+#### 1. Nominatim Client Module (`nominatim.rs`)
+
+New module in `spatia_geocode` crate. Uses Nominatim's `/search` endpoint (not batch -- Nominatim has no batch endpoint). Each address is a separate HTTP GET request.
+
+**Rate limiter:** `tokio::time::sleep(Duration::from_secs(1))` between requests. This is the simplest correct approach. No need for a token bucket -- Nominatim's policy is literally "max 1 req/sec."
+
+**API contract:**
+```rust
+pub(crate) struct NominatimResult {
+    pub(crate) inner: GeocodeResult,
+    pub(crate) importance: f64,  // Nominatim's importance score [0,1]
+}
+
+pub(crate) async fn geocode_via_nominatim(
+    addresses: &[String],
+    progress: impl Fn(usize, usize),  // (completed, total) callback
+) -> GeoResult<Vec<NominatimResult>>;
+```
+
+**Key design decisions:**
+- User-Agent header MUST identify the app: `Spatia/0.1 (https://spatia.dev)` (Nominatim TOS requirement)
+- Use `format=jsonv2` for structured results
+- Use `countrycodes=us` default (configurable via `SPATIA_NOMINATIM_COUNTRY` env var)
+- No API key required; base URL defaults to `https://nominatim.openstreetmap.org` but overridable via `SPATIA_NOMINATIM_BASE_URL` for self-hosted instances (which have no rate limit)
+
+#### 2. Feature-Gate Geocodio (`geocodio` feature)
+
+Move Geocodio from default production code to a Cargo feature gate:
+- Add `geocodio` feature to `spatia_geocode/Cargo.toml` (NOT default)
+- Wrap `geocodio.rs` module with `#[cfg(feature = "geocodio")]`
+- Wrap Geocodio-dependent code in `geocode.rs` with `#[cfg(feature = "geocodio")]`
+- Benchmark crate (`spatia_bench`) enables the `geocodio` feature for accuracy comparison
+
+#### 3. Pipeline Restructuring
+
+New production flow (default, no feature flags):
+```
+geocode_batch_with_components()
+  |
+  +-- Cache lookup (unchanged)
+  +-- Overture exact match (unchanged)
+  +-- Overture fuzzy match (unchanged)
+  +-- Local fuzzy geocode via lookup tables (unchanged)
+  +-- Nominatim HTTP fallback (NEW -- 1 req/sec, with progress callback)
+  +-- GERS reverse lookup (unchanged)
+```
+
+The strategy selection logic changes:
+- **Before:** `if has_geocodio_key && batch <= 500 -> api_first; else -> overture_first`
+- **After:** Always use Overture-first pipeline. The "api_first" fast path is removed from default builds (it was a Geocodio optimization). Nominatim's 1-req/sec rate limit means batch API shortcuts don't apply.
+
+When `geocodio` feature is enabled AND `SPATIA_GEOCODIO_API_KEY` is set, the old Geocodio paths remain available for benchmarking via explicit function calls.
+
+#### 4. Background Geocoding with Progressive Results
+
+This is the most significant architectural change. Currently, `geocode_table_column` is a single async Tauri command that blocks until all geocoding completes. With Nominatim's 1 req/sec limit, 100 addresses = ~100 seconds of blocking.
+
+**New approach:** Split geocoding into two phases:
+1. **Fast phase** (< 2 sec): Cache + Overture local matching. Write results to DuckDB immediately. Return partial results + count of remaining addresses.
+2. **Background phase** (async): Nominatim HTTP fallback for unresolved addresses. Each result is written to DuckDB as it arrives. Emit Tauri events per-address so the frontend can update progress.
+
+**Implementation:**
+- The existing `geocode_table_column` Tauri command runs the fast phase and returns immediately with partial results.
+- It spawns a `tokio::task` for the Nominatim background phase.
+- The background task emits `geocode-progress` events with: `{ stage: "nominatim", message: "Geocoding address 14/87 via Nominatim...", percent, eta_seconds, current_address }`.
+- Each Nominatim result is written to the DuckDB table incrementally (UPDATE per row).
+- When complete, emits a final `geocode-progress` event with `stage: "completed"`.
+- The frontend shows a progress bar with ETA: "Geocoding remaining 87 addresses (~87 seconds)".
+- Users can interact with the map/data using already-geocoded results while the background task runs.
+
+**Cancellation:** Add a Tauri command `cancel_geocode` that sets an `AtomicBool` flag checked by the background task between Nominatim requests.
+
+#### 5. Frontend Changes
+
+- **FileList.tsx:** After initial geocode returns, show a background progress indicator if Nominatim addresses remain. Display "X of Y addresses geocoded. Remaining ~Ns via Nominatim." with a cancel button.
+- **appStore.ts:** Add `geocodeInProgress: boolean` and `geocodeBackgroundProgress: { completed: number, total: number, eta: number } | null` to store state.
+- **GeocodeStatsSummary:** Update to show "nominatim" as a source instead of "geocodio".
+
+#### 6. Stats & Source Tracking
+
+- `GeocodeStats.api_resolved` renamed to `nominatim_resolved` in production (breaking change, but stats are internal).
+- Source string in `GeocodeResult.source` changes from `"geocodio"` to `"nominatim"`.
+- `_geocode_source` column values in DuckDB tables will show `"nominatim"`.
+- `default_confidence("nominatim")` set to 0.80 (Nominatim is generally slightly less precise than Geocodio for US addresses).
+
+### Tasks
+
+1. **[TASK-NOM-01] Nominatim HTTP client module** (est: 3h, role: engine, agent: senior-engineer)
+   - Create `src-tauri/crates/geocode/src/nominatim.rs`
+   - Implement `geocode_via_nominatim()` with:
+     - Per-request 1-second rate limiting via `tokio::time::sleep`
+     - Proper User-Agent header (`Spatia/0.1`)
+     - JSON response parsing (Nominatim `format=jsonv2`)
+     - Progress callback `Fn(usize, usize)` for (completed, total)
+     - `importance` score mapping to confidence
+     - Base URL from `SPATIA_NOMINATIM_BASE_URL` env var (default: `https://nominatim.openstreetmap.org`)
+     - Country filter from `SPATIA_NOMINATIM_COUNTRY` env var (default: `us`)
+   - Add `mod nominatim;` to `lib.rs`
+   - Unit tests with mockito (same pattern as geocodio.rs tests):
+     - TC-NOM-01: Single address returns correct lat/lon
+     - TC-NOM-02: No results returns empty vec (not error)
+     - TC-NOM-03: HTTP 429 (rate limited) returns error
+     - TC-NOM-04: Malformed JSON returns error
+     - TC-NOM-05: Empty input returns empty without HTTP call
+   - Acceptance criteria: `cargo test -p spatia_geocode` passes with new tests
+   - Dependencies: none
+
+2. **[TASK-NOM-02] Feature-gate Geocodio** (est: 2h, role: engine, agent: senior-engineer)
+   - Add `geocodio = []` feature to `src-tauri/crates/geocode/Cargo.toml`
+   - Wrap `mod geocodio` with `#[cfg(feature = "geocodio")]`
+   - Wrap all Geocodio imports/usage in `geocode.rs` with `#[cfg(feature = "geocodio")]`
+   - Wrap `geocode_via_geocodio` re-export in `lib.rs` with `#[cfg(feature = "geocodio")]`
+   - In `geocode_batch_api_first`: gate behind `#[cfg(feature = "geocodio")]`, add `#[cfg(not(feature = "geocodio"))]` stub that returns error
+   - Update `src-tauri/crates/bench/Cargo.toml` to depend on `spatia_geocode` with `features = ["geocodio"]`
+   - Ensure `cargo test -p spatia_geocode` passes WITHOUT the geocodio feature (default)
+   - Ensure `cargo test -p spatia_geocode --features geocodio` passes WITH the feature
+   - Acceptance criteria: Default build has zero Geocodio code compiled; bench crate still compiles with geocodio
+   - Dependencies: none (can parallelize with TASK-NOM-01)
+
+3. **[TASK-NOM-03] Integrate Nominatim into geocode pipeline** (est: 4h, role: engine, agent: senior-engineer)
+   - Modify `geocode_batch_overture_first()` in `geocode.rs`:
+     - Replace the Geocodio fallback block (currently lines 789-860) with Nominatim call
+     - Use `geocode_via_nominatim()` for unresolved addresses
+     - Map `NominatimResult.importance` to confidence (use as-is if > 0, else `default_confidence("nominatim")`)
+     - Cache Nominatim results via existing `cache_store()` with source `"nominatim"`
+     - GERS reverse lookup still applies to Nominatim results
+   - Modify `geocode_batch_with_components()`:
+     - Remove the `has_api_key && batch <= limit` fast-path branch (or gate it behind `#[cfg(feature = "geocodio")]`)
+     - Default path is always Overture-first with Nominatim fallback
+   - Update `default_confidence()` to handle `"nominatim"` (return 0.80)
+   - Update `GeocodeStats`: rename `api_resolved` field to `nominatim_resolved` (or keep as `api_resolved` and just change the source label -- evaluate breakage)
+   - Acceptance criteria: `geocode_batch()` resolves addresses without any API key set (using Nominatim); existing cache and Overture paths unchanged
+   - Dependencies: TASK-NOM-01, TASK-NOM-02
+
+4. **[TASK-NOM-04] Background geocoding with progressive results** (est: 5h, role: fullstack, agent: senior-engineer)
+   - **Rust side (`src-tauri/src/lib.rs`):**
+     - Refactor `geocode_table_column` to split into fast phase + background phase
+     - Fast phase: cache + Overture matching, write partial results to DuckDB, return immediately with `{ status: "partial", geocoded_count, remaining_count, estimated_seconds }`
+     - Background phase: spawn `tokio::task::spawn` with Nominatim geocoding
+     - Add `static GEOCODE_CANCEL: AtomicBool` flag (or per-table cancel map)
+     - Background task: for each Nominatim result, UPDATE the DuckDB row immediately, emit `geocode-progress` event
+     - New Tauri command: `cancel_geocode(table_name: String)` to set cancel flag
+     - Progress events: `{ stage: "nominatim", completed: N, total: M, eta_seconds: S, current_address: "..." }`
+   - **Frontend side:**
+     - `src/lib/appStore.ts`: Add `geocodeBackgroundProgress` state
+     - `src/components/FileList.tsx`:
+       - Listen for `geocode-progress` events with `stage: "nominatim"`
+       - Show inline progress bar: "Geocoding via Nominatim: 14/87 (~73s remaining)"
+       - Add cancel button that calls `cancel_geocode`
+       - When background completes, refresh table stats
+     - Table data should be usable while background geocoding runs (already-geocoded rows have _lat/_lon filled)
+   - Acceptance criteria:
+     - User sees partial results on map immediately after fast phase
+     - Background progress is visible in FileList
+     - Cancel stops the background task within 1 second
+     - All results are written to DuckDB incrementally (not batched at end)
+   - Dependencies: TASK-NOM-03
+
+5. **[TASK-NOM-05] Frontend progress UX and stats update** (est: 2h, role: frontend, agent: senior-engineer)
+   - Update `GeocodeStatsSummary` component to show "nominatim" source instead of "geocodio"
+   - Add ETA display before geocoding starts: "100 addresses: ~12s local + ~88s Nominatim"
+     - Pre-compute estimate: local phase ~2s, Nominatim = (remaining * 1 second)
+   - Update `GeocodeStats` type in `appStore.ts` to include `nominatim` in by_source
+   - Show time elapsed during background geocoding
+   - Acceptance criteria: Stats display is accurate, ETA is within 20% of actual time, no reference to "geocodio" in production UI
+   - Dependencies: TASK-NOM-04
+
+6. **[TASK-NOM-06] Integration tests** (est: 3h, role: engine, agent: test-engineer)
+   - Add integration test in `spatia_geocode`:
+     - Test full pipeline with mockito Nominatim server: cache miss -> Overture miss -> Nominatim -> cached
+     - Test rate limiting: verify at least 1 second between requests (measure elapsed time for 3 requests >= 2 seconds)
+     - Test cancellation: start geocoding, cancel after 2nd request, verify only 2 results
+     - Test self-hosted URL override via `SPATIA_NOMINATIM_BASE_URL`
+   - Add integration test for feature-gated Geocodio:
+     - `#[cfg(feature = "geocodio")]` test that Geocodio path still works
+   - Acceptance criteria: All tests pass in CI; `cargo test -p spatia_geocode` and `cargo test -p spatia_geocode --features geocodio`
+   - Dependencies: TASK-NOM-03
+
+7. **[TASK-NOM-07] Documentation and env var updates** (est: 1h, role: fullstack, agent: senior-engineer)
+   - Update `CLAUDE.md`:
+     - Add `SPATIA_NOMINATIM_BASE_URL` and `SPATIA_NOMINATIM_COUNTRY` to env vars section
+     - Note that `SPATIA_GEOCODIO_API_KEY` is now only used with `geocodio` feature flag
+     - Update geocoding flow description
+   - Update `summary.md` if it references Geocodio as production dependency
+   - Update Settings UI (`SettingsPanel.tsx`): remove Geocodio API key input from production UI (or label it "Benchmarking only")
+   - Acceptance criteria: All docs accurate, no orphan references to Geocodio as required dependency
+   - Dependencies: TASK-NOM-04, TASK-NOM-05
+
+### Sequencing & Parallelization
+
+```
+TASK-NOM-01 ──┐
+              ├──> TASK-NOM-03 ──> TASK-NOM-04 ──> TASK-NOM-05
+TASK-NOM-02 ──┘                        |               |
+                                       v               v
+                                  TASK-NOM-06      TASK-NOM-07
+```
+
+- NOM-01 and NOM-02 can run in parallel (no dependencies)
+- NOM-03 requires both NOM-01 and NOM-02
+- NOM-04 requires NOM-03 (needs the integrated pipeline)
+- NOM-05 and NOM-06 can start once NOM-04 is done
+- NOM-07 is last (needs everything settled)
+
+**Total estimated effort:** 20 hours across 7 tasks
+
+### Risks & Open Questions
+
+1. **Nominatim accuracy vs Geocodio:** Nominatim may return less precise results for US addresses, especially in suburban/rural areas. Mitigation: the Overture local matching handles the majority of addresses; Nominatim is only for the long tail. We should run a benchmark comparing accuracy before fully deprecating Geocodio access.
+
+2. **Rate limit at scale:** 500 addresses = ~8 minutes of Nominatim-only geocoding. For large datasets, this is slow. Mitigations:
+   - Overture local matching resolves 60-80% of US addresses, reducing the Nominatim load
+   - Self-hosted Nominatim has no rate limit (power users can set `SPATIA_NOMINATIM_BASE_URL`)
+   - Background processing means the user is not blocked
+
+3. **Nominatim TOS compliance:** Must include proper User-Agent, respect rate limits, and not bulk-geocode for commercial redistribution. Spatia's use case (user's own data, desktop app) is compliant, but worth documenting.
+
+4. **AtomicBool cancel pattern:** If multiple tables are geocoded simultaneously, a single static `AtomicBool` is insufficient. Consider using a `DashMap<String, Arc<AtomicBool>>` keyed by table name. For MVP, a single-table-at-a-time constraint is acceptable.
+
+5. **GeocodeStats field rename:** Renaming `api_resolved` to `nominatim_resolved` is a breaking change for any code that reads stats. Since stats are internal (not persisted), this is low-risk. Alternative: keep the field name as `api_resolved` and only change the source label string.
+
+6. **Geocodio feature gate in engine crate:** The `spatia_engine` crate re-exports `geocode_via_geocodio`. This re-export and any engine-level code that references Geocodio must also be feature-gated. Check `src-tauri/crates/engine/src/lib.rs` re-exports.
+
+7. **Self-hosted Nominatim for power users:** Document that users who need faster geocoding can run their own Nominatim instance (Docker one-liner) and point `SPATIA_NOMINATIM_BASE_URL` at it. This eliminates the rate limit entirely.
+
+### Quality Gate
+
+```bash
+pnpm build                                              # Frontend builds clean
+cd src-tauri && cargo test --workspace                   # All tests pass (default features)
+cd src-tauri && cargo test --workspace --features geocodio  # Geocodio tests still pass
+cd src-tauri && cargo clippy --workspace                 # No warnings
+```
+
+### Architecture Decision Record
+
+**Decision:** Use Nominatim as HTTP fallback instead of Geocodio for production geocoding.
+
+**Rationale:**
+- Zero cost for users (Nominatim is free for low-volume use)
+- Aligns with Spatia's local-first philosophy (can self-host Nominatim)
+- Geocodio's batch API advantage is negated by Overture local matching (which resolves most addresses before HTTP fallback)
+- Rate limit (1 req/sec) is acceptable because: (a) Overture handles 60-80% of addresses locally, (b) background processing prevents blocking, (c) self-hosted option exists for power users
+
+**Tradeoffs accepted:**
+- Slower than Geocodio for HTTP fallback (1 req/sec vs batch)
+- Potentially lower accuracy for some US addresses
+- More complex UX (background progress, ETA display)
+
+**Rejected alternatives:**
+- Pelias (free, self-hosted only -- too much setup for casual users)
+- Photon (Komoot's geocoder -- smaller community, less complete data)
+- Keep Geocodio as default (contradicts "free geocoding" goal)
+
+---
+
+## Previous Sprint: Table Stakes (Phase 1) — COMPLETE
 
 **Sprint date:** 2026-03-14
 **Goal:** Ship all 8 pre-launch blocker features to make Spatia launch-ready.
