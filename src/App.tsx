@@ -4,6 +4,7 @@ import { FileList } from "./components/FileList";
 import { ChatCard } from "./components/ChatCard";
 import { WidgetPanel } from "./components/WidgetPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { DbRecoveryDialog } from "./components/DbRecoveryDialog";
 import { useAppStore } from "./lib/appStore";
 import "./App.css";
 
@@ -16,15 +17,32 @@ function App() {
   const fetchApiConfig = useAppStore((s) => s.fetchApiConfig);
   const fetchLogPath = useAppStore((s) => s.fetchLogPath);
   const fetchDomainConfig = useAppStore((s) => s.fetchDomainConfig);
+  const fetchDbHealth = useAppStore((s) => s.fetchDbHealth);
+  const dbHealth = useAppStore((s) => s.dbHealth);
+  const dbHealthLoading = useAppStore((s) => s.dbHealthLoading);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const [fileListCollapsed, setFileListCollapsed] = useState(false);
 
   useEffect(() => {
+    void fetchDbHealth();
     void fetchApiConfig();
     void fetchLogPath();
     void fetchDomainConfig();
-  }, [fetchApiConfig, fetchLogPath, fetchDomainConfig]);
+  }, [fetchDbHealth, fetchApiConfig, fetchLogPath, fetchDomainConfig]);
+
+  // While the health check is in-flight, show nothing (prevents flash of normal UI)
+  if (dbHealthLoading) return null;
+
+  // Corrupt DB — show recovery dialog instead of normal app
+  if (dbHealth?.status === "Corrupt") {
+    return (
+      <DbRecoveryDialog
+        error={dbHealth.error}
+        fileSizeBytes={dbHealth.file_size}
+      />
+    );
+  }
 
   const panelWidth = fileListCollapsed ? 44 : 300;
 

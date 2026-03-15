@@ -56,6 +56,11 @@ export type ApiConfig = {
   geocodio: boolean;
 };
 
+export type DbHealthStatus =
+  | { status: "Healthy"; size_bytes: number; table_count: number }
+  | { status: "Corrupt"; error: string; file_size: number }
+  | { status: "Missing" };
+
 export type DomainPackConfig = {
   id: string;
   display_name: string;
@@ -107,6 +112,8 @@ type AppStore = {
   basemapId: string;
   settingsOpen: boolean;
   analysisTotalCount: number | null;
+  dbHealth: DbHealthStatus | null;
+  dbHealthLoading: boolean;
 
   addTable: (table: TableInfo) => void;
   updateTable: (name: string, patch: Partial<TableInfo>) => void;
@@ -131,6 +138,7 @@ type AppStore = {
   setBasemapId: (id: string) => void;
   setSettingsOpen: (open: boolean) => void;
   setAnalysisTotalCount: (count: number | null) => void;
+  fetchDbHealth: () => Promise<void>;
 };
 
 const storeInitializer: StateCreator<AppStore> = (set) => ({
@@ -149,6 +157,8 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   basemapId: (typeof localStorage !== "undefined" ? localStorage.getItem("basemapId") : null) ?? "dark",
   settingsOpen: false,
   analysisTotalCount: null,
+  dbHealth: null,
+  dbHealthLoading: false,
 
   addTable: (table) =>
     set((state) => ({ tables: [...state.tables, table] })),
@@ -267,6 +277,20 @@ const storeInitializer: StateCreator<AppStore> = (set) => ({
   },
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setAnalysisTotalCount: (count) => set({ analysisTotalCount: count }),
+  fetchDbHealth: async () => {
+    if (!isTauri()) return;
+    set({ dbHealthLoading: true });
+    try {
+      const health = await invoke<DbHealthStatus>("check_db_health_cmd");
+      set({ dbHealth: health, dbHealthLoading: false });
+    } catch {
+      // If the command itself errors, treat as corrupt so user can recover
+      set({
+        dbHealth: { status: "Corrupt", error: "Health check command failed", file_size: 0 },
+        dbHealthLoading: false,
+      });
+    }
+  },
 });
 
 export const useAppStore = create<AppStore>(storeInitializer);

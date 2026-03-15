@@ -93,7 +93,7 @@ pub fn check_db_health(db_path: &str) -> DbHealthStatus {
         }
     }
 
-    if &header != DUCKDB_MAGIC {
+    if header != DUCKDB_MAGIC {
         warn!(
             db_path,
             header = ?header,
