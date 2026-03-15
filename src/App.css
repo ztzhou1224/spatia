@@ -107,4 +107,28 @@
   .table-card:hover {
     border-color: rgba(148, 163, 184, 0.25);
   }
+
+  /* MapLibre popup overrides — prevent dark-theme text color from bleeding in */
+  .maplibregl-popup-content {
+    color: #1e293b;
+    background: #ffffff;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.3),
+      0 10px 15px -3px rgba(0, 0, 0, 0.2);
+  }
+
+  .maplibregl-popup-close-button {
+    color: #64748b;
+    font-size: 1rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .maplibregl-popup-close-button:hover {
+    color: #1e293b;
+    background: rgba(0, 0, 0, 0.05);
+  }
 }
