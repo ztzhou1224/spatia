@@ -359,19 +359,6 @@ pub fn geocode_batch(db_path: &str, addresses: &[String]) -> GeoResult<(Vec<Geoc
     geocode_batch_with_components(db_path, &components)
 }
 
-/// Maximum batch size for the API-first fast path.
-/// Batches at or below this size skip the Overture S3 download cascade
-/// when `SPATIA_GEOCODIO_API_KEY` is available, going straight to
-/// Cache → Geocodio API → GERS reverse lookup.
-///
-/// Override with `SPATIA_GEOCODE_FAST_PATH_LIMIT` env var.
-fn fast_path_limit() -> usize {
-    std::env::var("SPATIA_GEOCODE_FAST_PATH_LIMIT")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(500)
-}
-
 /// API-first fast path: Cache → Geocodio API → (optional) GERS reverse lookup.
 ///
 /// Skips the expensive Overture S3 download cascade entirely. For a 50-row
@@ -566,28 +553,25 @@ pub fn geocode_batch_api_first(
     Ok((ordered, stats))
 }
 
-/// Geocode pre-parsed address components using the best available strategy.
+/// Geocode pre-parsed address components using the Overture-first strategy.
 ///
 /// **Strategy selection:**
-/// - If `SPATIA_GEOCODIO_API_KEY` is set and batch size ≤ `fast_path_limit()` (default 500),
-///   uses the API-first fast path: Cache → Geocodio API → GERS reverse lookup.
-///   This avoids expensive Overture S3 downloads for small/medium batches.
-/// - Otherwise, falls back to the full Overture-first pipeline.
+/// - Default: Overture-first pipeline (local S3 data → exact match → fuzzy → Geocodio fallback).
+/// - Set `SPATIA_GEOCODE_STRATEGY=api_first` to use the API-first fast path instead
+///   (Cache → Geocodio API → GERS reverse), which skips S3 downloads entirely.
 ///
-/// The fast path reduces geocoding of a 50-row multi-city CSV from 15+ minutes
-/// to ~2 seconds by skipping millions of Overture S3 row downloads.
+/// The Overture pipeline now batches all city/state S3 downloads into single
+/// queries, reducing 41 separate S3 scans (~9 min) to 1 scan (~30-60s).
 pub fn geocode_batch_with_components(
     db_path: &str,
     components: &[AddressComponents],
 ) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
-    let limit = fast_path_limit();
-    let has_api_key = std::env::var("SPATIA_GEOCODIO_API_KEY").is_ok();
+    let strategy = std::env::var("SPATIA_GEOCODE_STRATEGY").unwrap_or_default();
 
-    if has_api_key && components.len() <= limit {
+    if strategy.eq_ignore_ascii_case("api_first") {
         info!(
             batch_size = components.len(),
-            fast_path_limit = limit,
-            "geocode_batch: using API-first fast path (skipping Overture S3 downloads)"
+            "geocode_batch: using API-first strategy (SPATIA_GEOCODE_STRATEGY=api_first)"
         );
         return geocode_batch_api_first(db_path, components);
     }
