@@ -6,10 +6,11 @@ use tracing::{debug, error, info, warn};
 use crate::cache::{cache_lookup, cache_store};
 use crate::geocodio::{geocode_via_geocodio_inner, GeocodioEnrichedResult};
 use crate::identifiers::validate_table_name;
+use crate::nominatim::{geocode_via_nominatim_batch, nominatim_base_url, NominatimEnrichedResult};
 use crate::overture_cache;
 use crate::scoring::{local_accept_threshold, score_candidate, MIN_SCORE};
 use crate::text::{normalize_address, tokenize_address, AddressComponents, components_from_string};
-use crate::types::{GeoResult, GeocodeBatchResult, GeocodeResult, GeocodeStats};
+use crate::types::{GeoResult, GeocodeBatchResult, GeocodeProgressUpdate, GeocodeResult, GeocodeStats};
 
 #[derive(Debug, Clone)]
 struct LocalGeocodeCandidate {
@@ -318,11 +319,22 @@ pub fn local_fuzzy_geocode(
 fn default_confidence(source: &str) -> f64 {
     if source.eq_ignore_ascii_case("geocodio") {
         0.85
-    } else if source.eq_ignore_ascii_case("overture_fuzzy") {
-        0.8
+    } else if source.eq_ignore_ascii_case("nominatim")
+        || source.eq_ignore_ascii_case("overture_fuzzy")
+    {
+        0.80
     } else {
         1.0
     }
+}
+
+/// Whether Geocodio should be used (testing/benchmark mode).
+/// Requires BOTH `SPATIA_GEOCODIO_API_KEY` AND `SPATIA_GEOCODE_USE_GEOCODIO=true`.
+fn use_geocodio() -> bool {
+    std::env::var("SPATIA_GEOCODIO_API_KEY").is_ok()
+        && std::env::var("SPATIA_GEOCODE_USE_GEOCODIO")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false)
 }
 
 // ---- Async runner helper ----
@@ -569,33 +581,46 @@ pub fn geocode_batch_api_first(
 /// Geocode pre-parsed address components using the best available strategy.
 ///
 /// **Strategy selection:**
-/// - If `SPATIA_GEOCODIO_API_KEY` is set and batch size ≤ `fast_path_limit()` (default 500),
-///   uses the API-first fast path: Cache → Geocodio API → GERS reverse lookup.
-///   This avoids expensive Overture S3 downloads for small/medium batches.
-/// - Otherwise, falls back to the full Overture-first pipeline.
-///
-/// The fast path reduces geocoding of a 50-row multi-city CSV from 15+ minutes
-/// to ~2 seconds by skipping millions of Overture S3 row downloads.
+/// - Default: Overture-first pipeline with Nominatim (free) fallback.
+/// - If `SPATIA_GEOCODE_USE_GEOCODIO=true` AND `SPATIA_GEOCODIO_API_KEY` is set,
+///   uses Geocodio instead of Nominatim (for testing/benchmarking only).
+/// - The API-first fast path is only used with Geocodio (testing mode).
 pub fn geocode_batch_with_components(
     db_path: &str,
     components: &[AddressComponents],
 ) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)> {
-    let limit = fast_path_limit();
-    let has_api_key = std::env::var("SPATIA_GEOCODIO_API_KEY").is_ok();
-
-    if has_api_key && components.len() <= limit {
-        info!(
-            batch_size = components.len(),
-            fast_path_limit = limit,
-            "geocode_batch: using API-first fast path (skipping Overture S3 downloads)"
-        );
-        return geocode_batch_api_first(db_path, components);
+    // Geocodio testing mode: API-first fast path
+    if use_geocodio() {
+        let limit = fast_path_limit();
+        if components.len() <= limit {
+            info!(
+                batch_size = components.len(),
+                fast_path_limit = limit,
+                "geocode_batch: using Geocodio API-first fast path (testing mode)"
+            );
+            return geocode_batch_api_first(db_path, components);
+        }
     }
 
     geocode_batch_overture_first(db_path, components)
 }
 
-/// Full Overture-first geocoding pipeline (original strategy).
+/// Geocode with a progress callback for real-time UI updates.
+///
+/// Same strategy as `geocode_batch_with_components` but emits
+/// [`GeocodeProgressUpdate`] events during the Nominatim phase.
+pub fn geocode_batch_with_progress<F>(
+    db_path: &str,
+    components: &[AddressComponents],
+    progress_cb: F,
+) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)>
+where
+    F: Fn(GeocodeProgressUpdate) + Send + 'static,
+{
+    geocode_batch_overture_first_with_progress(db_path, components, Some(progress_cb))
+}
+
+/// Full Overture-first geocoding pipeline.
 ///
 /// Pipeline:
 /// 1. Cache lookup — return cached hits immediately.
@@ -603,10 +628,9 @@ pub fn geocode_batch_with_components(
 ///    a. Extract zip codes; download Overture data for those zips.
 ///    b. Try exact Overture match (number + street + postcode).
 ///    c. Try fuzzy Overture match for remaining.
-///    d. Unresolved addresses fall through to Geocodio API (if key provided).
 /// 3. Existing local fuzzy geocode (lookup tables) as fallback.
-/// 4. Geocodio API fallback for anything still unresolved.
-/// 5. GERS reverse lookup to attach GERS IDs to Geocodio results.
+/// 4. Nominatim API fallback for anything still unresolved (free, 1 req/sec).
+/// 5. GERS reverse lookup to attach GERS IDs to API results.
 ///
 /// Returns both the ordered results and a [`GeocodeStats`] breakdown by source.
 pub fn geocode_batch_overture_first(
@@ -786,35 +810,31 @@ pub fn geocode_batch_overture_first(
             }
         }
 
-        // ---- Step 4: Geocodio API fallback ----
+        // ---- Step 4: Nominatim API fallback (free) ----
         let unresolved: Vec<String> = misses
             .into_iter()
             .filter(|address| !resolved_by_address.contains_key(address))
             .collect();
 
         if !unresolved.is_empty() {
-            info!(unresolved_count = unresolved.len(), "geocode_batch: falling back to Geocodio API");
-            let api_key = std::env::var("SPATIA_GEOCODIO_API_KEY").map_err(|_| {
-                warn!("geocode_batch: SPATIA_GEOCODIO_API_KEY not set, cannot geocode remaining addresses");
-                "SPATIA_GEOCODIO_API_KEY environment variable not set"
-            })?;
-            let base_url = std::env::var("SPATIA_GEOCODIO_BASE_URL")
-                .unwrap_or_else(|_| "https://api.geocod.io".to_string());
+            let base_url = nominatim_base_url();
+            info!(unresolved_count = unresolved.len(), base_url = %base_url, "geocode_batch: falling back to Nominatim");
 
-            // Use the inner function so we get the real `accuracy` score from
-            // the Geocodio API rather than falling back to the hardcoded 0.85
-            // default.
-            let geocodio_results = run_async(geocode_via_geocodio_inner(&api_key, &unresolved, &base_url))
-                .map_err(|e| {
-                    error!(error = %e, "geocode_batch: Geocodio API call failed");
-                    e
-                })?;
-            api_resolved_count = geocodio_results.len();
-            let cache_records: Vec<GeocodeResult> = geocodio_results
+            let nominatim_results = run_async(geocode_via_nominatim_batch(
+                &unresolved,
+                &base_url,
+                None::<fn(usize, usize)>,
+            ))
+            .map_err(|e| {
+                error!(error = %e, "geocode_batch: Nominatim batch failed");
+                e
+            })?;
+            api_resolved_count = nominatim_results.len();
+            let cache_records: Vec<GeocodeResult> = nominatim_results
                 .iter()
-                .map(|e: &GeocodioEnrichedResult| e.inner.clone())
+                .map(|e: &NominatimEnrichedResult| e.inner.clone())
                 .collect();
-            cache_store(&conn, &cache_records, "geocodio")?;
+            cache_store(&conn, &cache_records, "nominatim")?;
 
             // Build a zip map from address → zip for GERS reverse lookup
             let addr_to_zip: HashMap<String, Option<String>> = components
@@ -822,14 +842,14 @@ pub fn geocode_batch_overture_first(
                 .map(|c| (c.full.clone(), c.zip.clone()))
                 .collect();
 
-            for enriched in geocodio_results {
-                let confidence = if enriched.accuracy > 0.0 {
-                    enriched.accuracy
+            for enriched in nominatim_results {
+                let confidence = if enriched.importance > 0.0 {
+                    enriched.importance
                 } else {
-                    default_confidence("geocodio")
+                    default_confidence("nominatim")
                 };
 
-                // ---- Step 5: GERS reverse lookup for Geocodio results ----
+                // ---- Step 5: GERS reverse lookup for Nominatim results ----
                 let zip_hint = addr_to_zip
                     .get(&enriched.inner.address)
                     .and_then(|z| z.as_deref());
@@ -845,7 +865,7 @@ pub fn geocode_batch_overture_first(
                     debug!(
                         address = enriched.inner.address.as_str(),
                         gers_id = gers_id.as_deref().unwrap_or(""),
-                        "geocode_batch: attached GERS ID to Geocodio result"
+                        "geocode_batch: attached GERS ID to Nominatim result"
                     );
                 }
 
@@ -899,6 +919,279 @@ pub fn geocode_batch_overture_first(
     Ok((ordered, stats))
 }
 
+/// Overture-first pipeline with progress callback support.
+///
+/// Same pipeline as [`geocode_batch_overture_first`] but emits progress
+/// updates during the Nominatim phase for real-time UI feedback.
+fn geocode_batch_overture_first_with_progress<F>(
+    db_path: &str,
+    components: &[AddressComponents],
+    progress_cb: Option<F>,
+) -> GeoResult<(Vec<GeocodeBatchResult>, GeocodeStats)>
+where
+    F: Fn(GeocodeProgressUpdate) + Send + 'static,
+{
+    let addresses: Vec<String> = components.iter().map(|c| c.full.clone()).collect();
+
+    info!(address_count = addresses.len(), "geocode_batch_progress: starting");
+
+    let conn = Connection::open(db_path)?;
+
+    // ---- Step 1: Cache lookup ----
+    let (cached_hits, misses) = cache_lookup(&conn, &addresses)?;
+    let cache_hit_count = cached_hits.len();
+
+    if let Some(ref cb) = progress_cb {
+        cb(GeocodeProgressUpdate {
+            stage: "cache".to_string(),
+            processed: cache_hit_count,
+            total: addresses.len(),
+            estimated_secs: None,
+            current_address: None,
+        });
+    }
+
+    let mut resolved_by_address: HashMap<String, GeocodeBatchResult> = HashMap::new();
+
+    for result in cached_hits {
+        resolved_by_address.insert(
+            result.address.clone(),
+            GeocodeBatchResult {
+                address: result.address,
+                lat: result.lat,
+                lon: result.lon,
+                confidence: default_confidence(&result.source),
+                source: result.source,
+                matched_label: None,
+                matched_table: None,
+                gers_id: None,
+            },
+        );
+    }
+
+    let mut overture_exact_count = 0usize;
+    let mut local_fuzzy_count = 0usize;
+    let mut api_resolved_count = 0usize;
+
+    if !misses.is_empty() {
+        let miss_set: HashSet<&str> = misses.iter().map(String::as_str).collect();
+        let miss_components: Vec<&AddressComponents> = components
+            .iter()
+            .filter(|c| miss_set.contains(c.full.as_str()))
+            .collect();
+
+        // ---- Step 2a: Overture zip download ----
+        let already_cached_zips = overture_cache::cached_postcodes(&conn).unwrap_or_default();
+        let needed_zips: Vec<String> = miss_components
+            .iter()
+            .filter_map(|c| c.zip.as_deref())
+            .filter(|z| !z.is_empty() && !already_cached_zips.contains(*z))
+            .map(String::from)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !needed_zips.is_empty() {
+            info!(zip_count = needed_zips.len(), "geocode_batch_progress: downloading Overture data");
+            match overture_cache::fetch_by_postcodes(&conn, &needed_zips, |msg, _done, _total| {
+                debug!(msg, "geocode_batch_progress: overture postcode fetch progress");
+            }) {
+                Ok(rows) => debug!(rows, "geocode_batch_progress: Overture fetch complete"),
+                Err(e) => warn!(error = %e, "geocode_batch_progress: Overture fetch failed, continuing"),
+            }
+        }
+
+        if let Some(ref cb) = progress_cb {
+            cb(GeocodeProgressUpdate {
+                stage: "overture".to_string(),
+                processed: resolved_by_address.len(),
+                total: addresses.len(),
+                estimated_secs: None,
+                current_address: None,
+            });
+        }
+
+        // ---- Step 2b: Exact Overture match ----
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) { continue; }
+            let number = comp.number.as_deref();
+            let street = comp.street.as_deref();
+            let zip = comp.zip.as_deref();
+            if number.is_some() && street.is_some() && zip.is_some() {
+                match overture_cache::exact_overture_match(&conn, number, street, zip) {
+                    Ok(Some(mut result)) => {
+                        result.address = comp.full.clone();
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        overture_exact_count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => debug!(error = %e, "geocode_batch_progress: exact_overture_match error"),
+                }
+            }
+        }
+
+        // ---- Step 2c: Fuzzy Overture match ----
+        for comp in &miss_components {
+            if resolved_by_address.contains_key(&comp.full) { continue; }
+            match overture_cache::fuzzy_overture_match(&conn, &comp.full, comp.zip.as_deref(), comp.city.as_deref(), comp.state.as_deref()) {
+                Ok(Some(mut result)) => {
+                    let threshold = local_accept_threshold();
+                    if result.confidence >= threshold {
+                        result.address = comp.full.clone();
+                        resolved_by_address.insert(comp.full.clone(), result);
+                        local_fuzzy_count += 1;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => debug!(error = %e, "geocode_batch_progress: fuzzy_overture_match error"),
+            }
+        }
+
+        // ---- Step 3: Local fuzzy geocode ----
+        let still_unresolved: Vec<String> = misses
+            .iter()
+            .filter(|a| !resolved_by_address.contains_key(*a))
+            .cloned()
+            .collect();
+
+        if !still_unresolved.is_empty() {
+            let local_hits = local_fuzzy_geocode(&conn, &still_unresolved, Some(db_path))?;
+            if !local_hits.is_empty() {
+                let threshold = local_accept_threshold();
+                let (accepted, _): (Vec<_>, Vec<_>) = local_hits.into_iter().partition(|r| r.confidence >= threshold);
+                if !accepted.is_empty() {
+                    local_fuzzy_count += accepted.len();
+                    let local_cache_records: Vec<GeocodeResult> = accepted.iter().map(|r| GeocodeResult {
+                        address: r.address.clone(), lat: r.lat, lon: r.lon, source: r.source.clone(),
+                    }).collect();
+                    cache_store(&conn, &local_cache_records, "overture_fuzzy")?;
+                    for result in accepted {
+                        resolved_by_address.insert(result.address.clone(), result);
+                    }
+                }
+            }
+        }
+
+        // ---- Step 4: Nominatim fallback with progress ----
+        let unresolved: Vec<String> = misses
+            .into_iter()
+            .filter(|address| !resolved_by_address.contains_key(address))
+            .collect();
+
+        if !unresolved.is_empty() {
+            let base_url = nominatim_base_url();
+            let unresolved_count = unresolved.len();
+            info!(unresolved_count, base_url = %base_url, "geocode_batch_progress: Nominatim fallback");
+
+            if let Some(ref cb) = progress_cb {
+                cb(GeocodeProgressUpdate {
+                    stage: "nominatim".to_string(),
+                    processed: 0,
+                    total: unresolved_count,
+                    estimated_secs: Some(unresolved_count as u64),
+                    current_address: None,
+                });
+            }
+
+            let unresolved_clone = unresolved.clone();
+            let progress_cb_ref = progress_cb.as_ref();
+            let nominatim_results = run_async(geocode_via_nominatim_batch(
+                &unresolved,
+                &base_url,
+                Some(move |done: usize, total: usize| {
+                    if let Some(cb) = progress_cb_ref {
+                        cb(GeocodeProgressUpdate {
+                            stage: "nominatim".to_string(),
+                            processed: done,
+                            total,
+                            estimated_secs: Some((total - done) as u64),
+                            current_address: unresolved_clone.get(done.saturating_sub(1)).cloned(),
+                        });
+                    }
+                }),
+            ))
+            .map_err(|e| {
+                error!(error = %e, "geocode_batch_progress: Nominatim batch failed");
+                e
+            })?;
+
+            api_resolved_count = nominatim_results.len();
+            let cache_records: Vec<GeocodeResult> = nominatim_results
+                .iter()
+                .map(|e| e.inner.clone())
+                .collect();
+            cache_store(&conn, &cache_records, "nominatim")?;
+
+            let addr_to_zip: HashMap<String, Option<String>> = components
+                .iter()
+                .map(|c| (c.full.clone(), c.zip.clone()))
+                .collect();
+
+            for enriched in nominatim_results {
+                let confidence = if enriched.importance > 0.0 {
+                    enriched.importance
+                } else {
+                    default_confidence("nominatim")
+                };
+
+                let zip_hint = addr_to_zip.get(&enriched.inner.address).and_then(|z| z.as_deref());
+                let gers_id = overture_cache::reverse_lookup_gers(&conn, enriched.inner.lat, enriched.inner.lon, zip_hint).unwrap_or(None);
+
+                resolved_by_address.insert(
+                    enriched.inner.address.clone(),
+                    GeocodeBatchResult {
+                        address: enriched.inner.address,
+                        lat: enriched.inner.lat,
+                        lon: enriched.inner.lon,
+                        source: enriched.inner.source,
+                        confidence,
+                        matched_label: None,
+                        matched_table: None,
+                        gers_id,
+                    },
+                );
+            }
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for address in &addresses {
+        if let Some(result) = resolved_by_address.get(address) {
+            ordered.push(result.clone());
+        }
+    }
+
+    let total = addresses.len();
+    let geocoded = ordered.len();
+    let stats = GeocodeStats {
+        total,
+        geocoded,
+        cache_hits: cache_hit_count,
+        overture_exact: overture_exact_count,
+        local_fuzzy: local_fuzzy_count,
+        api_resolved: api_resolved_count,
+        unresolved: total - geocoded,
+    };
+
+    if let Some(ref cb) = progress_cb {
+        cb(GeocodeProgressUpdate {
+            stage: "done".to_string(),
+            processed: geocoded,
+            total,
+            estimated_secs: Some(0),
+            current_address: None,
+        });
+    }
+
+    info!(
+        resolved_count = geocoded, total, cache_hits = cache_hit_count,
+        overture_exact = overture_exact_count, local_fuzzy = local_fuzzy_count,
+        api_resolved = api_resolved_count, unresolved = total - geocoded,
+        "geocode_batch_progress: complete"
+    );
+    Ok((ordered, stats))
+}
+
 /// Backwards-compatible geocode API that returns the legacy shape.
 pub fn geocode_addresses(db_path: &str, addresses: &[String]) -> GeoResult<Vec<GeocodeResult>> {
     let (enriched, _stats) = geocode_batch(db_path, addresses)?;
@@ -931,14 +1224,30 @@ mod tests {
         let _ = std::fs::remove_file(format!("{db_path}.wal.lck"));
     }
 
+    /// With Nominatim as the default fallback, missing Geocodio key no longer errors.
+    /// The pipeline attempts Nominatim instead (which may fail on network, but
+    /// doesn't require an API key). This test verifies no panic occurs.
     #[test]
-    fn geocode_addresses_missing_api_key_returns_error() {
+    fn geocode_addresses_without_api_key_uses_nominatim_fallback() {
         let db_path = tmp_db_path();
-        // Ensure the env var is absent for this test
         std::env::remove_var("SPATIA_GEOCODIO_API_KEY");
+        std::env::remove_var("SPATIA_GEOCODE_USE_GEOCODIO");
         let addresses = vec!["uncached address that requires API".to_string()];
-        let err = geocode_addresses(&db_path, &addresses).expect_err("should fail");
-        assert!(err.to_string().contains("SPATIA_GEOCODIO_API_KEY"));
+        // With Nominatim fallback, this will attempt a network call.
+        // In CI/offline, Nominatim will fail but it should be a network
+        // error, not a missing-key error.
+        let result = geocode_addresses(&db_path, &addresses);
+        match result {
+            Ok(_) => {} // Nominatim resolved (online)
+            Err(e) => {
+                let msg = e.to_string();
+                // Should NOT be a missing API key error
+                assert!(
+                    !msg.contains("SPATIA_GEOCODIO_API_KEY"),
+                    "should not require Geocodio key: {msg}"
+                );
+            }
+        }
         cleanup_db(&db_path);
     }
 

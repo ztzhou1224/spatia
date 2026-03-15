@@ -9,7 +9,7 @@ export type GeocodeStats = {
     cache: number;
     overture_exact: number;
     overture_fuzzy: number;
-    geocodio: number;
+    nominatim: number;
   };
   unresolved: number;
 };

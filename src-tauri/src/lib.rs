@@ -250,23 +250,58 @@ fn detect_address_columns(table_name: String) -> Result<String, String> {
 
 #[derive(Debug, Clone, Serialize)]
 struct GeocodeProgressEvent {
-    stage: &'static str,
+    stage: String,
     message: String,
     percent: u8,
+    /// Addresses processed so far (Nominatim phase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    processed: Option<usize>,
+    /// Total addresses to process (Nominatim phase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total: Option<usize>,
+    /// Estimated seconds remaining (Nominatim phase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_secs: Option<u64>,
 }
 
 fn emit_geocode_progress(
     app: &tauri::AppHandle,
-    stage: &'static str,
+    stage: &str,
     message: impl Into<String>,
     percent: u8,
 ) -> Result<(), String> {
     app.emit(
         "geocode-progress",
         GeocodeProgressEvent {
-            stage,
+            stage: stage.to_string(),
             message: message.into(),
             percent,
+            processed: None,
+            total: None,
+            estimated_secs: None,
+        },
+    )
+    .map_err(|err| err.to_string())
+}
+
+fn emit_geocode_progress_detailed(
+    app: &tauri::AppHandle,
+    stage: &str,
+    message: impl Into<String>,
+    percent: u8,
+    processed: usize,
+    total: usize,
+    estimated_secs: Option<u64>,
+) -> Result<(), String> {
+    app.emit(
+        "geocode-progress",
+        GeocodeProgressEvent {
+            stage: stage.to_string(),
+            message: message.into(),
+            percent,
+            processed: Some(processed),
+            total: Some(total),
+            estimated_secs,
         },
     )
     .map_err(|err| err.to_string())
@@ -380,10 +415,49 @@ async fn geocode_table_column(
         20,
     )?;
 
-    // geocode_batch_with_components opens and closes its own connection
+    // Use progress-aware geocoding so we can relay Nominatim progress to the UI
+    let app_clone = app.clone();
     let (results, geocode_stats) =
-        spatia_engine::geocode_batch_with_components(db_path(), &components)
-            .map_err(|e| e.to_string())?;
+        spatia_engine::geocode_batch_with_progress(db_path(), &components, move |update| {
+            let pct = match update.stage.as_str() {
+                "cache" => 25,
+                "overture" => 30,
+                "nominatim" => {
+                    if update.total > 0 {
+                        // Scale from 30% to 90% proportionally
+                        (30 + (60 * update.processed / update.total).min(60)) as u8
+                    } else {
+                        30
+                    }
+                }
+                "done" => 90,
+                _ => 50,
+            };
+            let msg = match update.stage.as_str() {
+                "nominatim" => {
+                    let secs = update.estimated_secs.unwrap_or(0);
+                    format!(
+                        "Nominatim: {}/{} addresses (~{}s remaining)",
+                        update.processed, update.total, secs
+                    )
+                }
+                "cache" => format!("{} addresses resolved from cache", update.processed),
+                "overture" => format!("{} addresses resolved from Overture", update.processed),
+                _ => format!("Processing... {}/{}", update.processed, update.total),
+            };
+            let _ = app_clone.emit(
+                "geocode-progress",
+                GeocodeProgressEvent {
+                    stage: update.stage,
+                    message: msg,
+                    percent: pct,
+                    processed: Some(update.processed),
+                    total: Some(update.total),
+                    estimated_secs: update.estimated_secs,
+                },
+            );
+        })
+        .map_err(|e| e.to_string())?;
     let geocoded_count = results.len();
 
     info!(
@@ -403,7 +477,7 @@ async fn geocode_table_column(
         &app,
         "geocoded",
         format!("Geocoded {geocoded_count}/{total_addresses} addresses"),
-        70,
+        92,
     )?;
 
     if !results.is_empty() {
@@ -489,7 +563,7 @@ async fn geocode_table_column(
             "cache": geocode_stats.cache_hits,
             "overture_exact": geocode_stats.overture_exact,
             "overture_fuzzy": geocode_stats.local_fuzzy,
-            "geocodio": geocode_stats.api_resolved,
+            "nominatim": geocode_stats.api_resolved,
         },
         "unresolved": geocode_stats.unresolved,
     });
