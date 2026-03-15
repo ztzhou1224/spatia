@@ -12,8 +12,9 @@ use tracing::{debug, error, info};
 static DB_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// Result of the DB health check performed during startup.
-/// `None` means setup has not run yet (e.g. unit tests).
-static DB_HEALTH: std::sync::OnceLock<db_health::DbHealthStatus> = std::sync::OnceLock::new();
+/// Uses `RwLock` so it can be updated after recovery.
+static DB_HEALTH: std::sync::RwLock<Option<db_health::DbHealthStatus>> =
+    std::sync::RwLock::new(None);
 
 /// Absolute path to the current log file. Set once in `run()` setup.
 static LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -1598,23 +1599,26 @@ fn get_domain_pack_config() -> Result<String, String> {
 
 #[tauri::command]
 fn check_db_health_cmd() -> Result<db_health::DbHealthStatus, String> {
-    // Return the result cached at startup; fall back to a live check only if
-    // setup never ran (e.g. tests calling commands directly).
-    let status = DB_HEALTH.get().cloned().unwrap_or_else(|| {
-        db_health::check_db_health(db_path())
-    });
+    // Return the cached result; fall back to a live check if setup never ran.
+    let status = DB_HEALTH
+        .read()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .unwrap_or_else(|| db_health::check_db_health(db_path()));
     Ok(status)
 }
 
 #[tauri::command]
 fn recover_db_cmd(action: db_health::RecoveryAction) -> Result<db_health::RecoveryResult, String> {
     let result = db_health::recover_db(db_path(), action)?;
-    // After a successful recovery, update the cached health status so
-    // subsequent calls to check_db_health_cmd reflect the new state.
     if result.success {
-        // We can't overwrite OnceLock, but we can log. The frontend should
-        // re-invoke check_db_health_cmd after recovery to get the fresh status.
-        info!("db_health: recovery succeeded; restart the app for full operation");
+        // Re-check health and update the cached status so subsequent calls
+        // (e.g. after frontend reload) reflect the recovered state.
+        let fresh = db_health::check_db_health(db_path());
+        if let Ok(mut guard) = DB_HEALTH.write() {
+            *guard = Some(fresh);
+        }
+        info!("db_health: recovery succeeded; cached health status updated");
     }
     Ok(result)
 }
@@ -1738,7 +1742,9 @@ pub fn run() {
                     );
                 }
             }
-            let _ = DB_HEALTH.set(health);
+            if let Ok(mut guard) = DB_HEALTH.write() {
+                *guard = Some(health);
+            }
 
             // Inject stored API keys into env vars (if not already set)
             {
