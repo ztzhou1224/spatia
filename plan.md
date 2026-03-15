@@ -570,12 +570,12 @@ Goal: Build insurance-specific capabilities that transform Spatia from a generic
 - [x] TASK-20: Truncation indicators
 - [x] TASK-21: Tooltip labels on all controls
 
-**Phase 2 — Competitive Parity:**
-- [ ] TASK-22: GeoJSON/Shapefile import
-- [ ] TASK-23: Column sort/filter in table preview
-- [ ] TASK-24: Editable SQL panel in chat
-- [ ] TASK-25: Example query suggestions
-- [ ] TASK-26: Increased result limits with pagination
+**Phase 2 — Competitive Parity: COMPLETE**
+- [x] TASK-22: GeoJSON/Shapefile import
+- [x] TASK-23: Column sort/filter in table preview
+- [x] TASK-24: Editable SQL panel in chat
+- [x] TASK-25: Example query suggestions
+- [x] TASK-26: Increased result limits with pagination
 
 **Phase 3 — Insurance Vertical (Differentiation):**
 - [ ] TASK-27: FEMA flood zone data integration
