@@ -26,7 +26,10 @@ pub struct AnalysisExecutionResult {
 }
 
 /// Maximum rows included in the tabular preview.
-const TABULAR_ROW_LIMIT: usize = 20;
+const TABULAR_ROW_LIMIT: usize = 100;
+
+/// Maximum features included in the GeoJSON result.
+const GEOJSON_ROW_LIMIT: usize = 5000;
 
 /// Drop all `_spatia_step_*` intermediate views from the given connection.
 /// Errors are logged but not propagated, since this is a best-effort cleanup.
@@ -119,9 +122,9 @@ fn read_analysis_result(conn: &Connection) -> EngineResult<AnalysisExecutionResu
         }
     };
 
-    // --- GeoJSON pass (up to 1000 rows) ---
+    // --- GeoJSON pass (up to GEOJSON_ROW_LIMIT rows) ---
     let mut stmt = conn.prepare(&format!(
-        "SELECT {cast_select} FROM analysis_result LIMIT 1000"
+        "SELECT {cast_select} FROM analysis_result LIMIT {GEOJSON_ROW_LIMIT}"
     ))?;
 
     let mut rows = stmt.query([])?;

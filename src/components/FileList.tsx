@@ -111,48 +111,112 @@ function TablePreview({ tableName }: { tableName: string }) {
   const [data, setData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [filterInput, setFilterInput] = useState('');
+  const [filterValue, setFilterValue] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    invoke<string>("preview_table", { tableName, limit: 50 })
+    invoke<string>("preview_table", {
+      tableName,
+      limit: 50,
+      orderBy: sortColumn ?? undefined,
+      orderDir: sortColumn ? sortDir : undefined,
+      filterValue: filterValue || undefined,
+    })
       .then((raw) => {
         setData(JSON.parse(raw) as PreviewData);
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
+  }, [tableName, sortColumn, sortDir, filterValue]);
+
+  // Reset sort and filter when the table changes
+  useEffect(() => {
+    setSortColumn(null);
+    setSortDir('asc');
+    setFilterInput('');
+    setFilterValue('');
   }, [tableName]);
 
-  if (loading) return <Spinner size="sm" />;
-  if (error) return <p className="text-xs text-destructive">{error}</p>;
-  if (!data || data.rows.length === 0) return <p className="text-xs text-muted-foreground">No rows</p>;
+  function handleFilterChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setFilterInput(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setFilterValue(val);
+    }, 300);
+  }
+
+  function handleColumnHeaderClick(col: string) {
+    if (sortColumn !== col) {
+      setSortColumn(col);
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortDir('desc');
+    } else {
+      // cycle back: desc → none
+      setSortColumn(null);
+      setSortDir('asc');
+    }
+  }
 
   return (
-    <div className="overflow-x-auto overflow-y-auto max-h-60 border border-border rounded-md">
-      <table className="w-full border-collapse text-[11px]">
-        <thead>
-          <tr className="bg-secondary">
-            {data.columns.map((col) => (
-              <th key={col} className="px-2 py-1.5 border-b border-r border-border text-left whitespace-nowrap font-semibold sticky top-0 bg-secondary text-muted-foreground uppercase text-[10px] tracking-wide last:border-r-0">
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, i) => (
-            <tr key={i} className={i % 2 === 0 ? "bg-transparent" : "bg-secondary/40"}>
-              {data.columns.map((col) => (
-                <td key={col} className="px-2 py-1 border-b border-r border-border/40 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis last:border-r-0">
-                  {row[col] ?? <span className="text-muted-foreground italic">null</span>}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {data.total >= 50 && (
-        <p className="text-xs text-muted-foreground mt-1">Showing first 50 rows</p>
+    <div className="flex flex-col gap-1">
+      <input
+        type="text"
+        placeholder="Search rows..."
+        value={filterInput}
+        onChange={handleFilterChange}
+        className="w-full text-xs px-2 py-1 rounded border border-border bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+      {loading && <Spinner size="sm" />}
+      {!loading && error && <p className="text-xs text-destructive">{error}</p>}
+      {!loading && !error && (!data || data.rows.length === 0) && (
+        <p className="text-xs text-muted-foreground">No rows</p>
+      )}
+      {!loading && !error && data && data.rows.length > 0 && (
+        <>
+          <div className="overflow-x-auto overflow-y-auto max-h-56 border border-border rounded-md">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-secondary">
+                  {data.columns.map((col) => (
+                    <th
+                      key={col}
+                      onClick={() => handleColumnHeaderClick(col)}
+                      className="px-2 py-1.5 border-b border-r border-border text-left whitespace-nowrap font-semibold sticky top-0 bg-secondary text-muted-foreground uppercase text-[10px] tracking-wide last:border-r-0 cursor-pointer select-none hover:bg-secondary/80"
+                    >
+                      <span className="flex items-center gap-1">
+                        {col}
+                        {sortColumn === col && (
+                          <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                        )}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((row, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-transparent" : "bg-secondary/40"}>
+                    {data.columns.map((col) => (
+                      <td key={col} className="px-2 py-1 border-b border-r border-border/40 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis last:border-r-0">
+                        {row[col] ?? <span className="text-muted-foreground italic">null</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Showing {data.rows.length} of {data.total} rows
+          </p>
+        </>
       )}
     </div>
   );

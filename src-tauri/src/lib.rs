@@ -823,7 +823,13 @@ async fn generate_visualization_command(
 // ---- Preview table ----
 
 #[tauri::command]
-fn preview_table(table_name: String, limit: Option<u32>) -> Result<String, String> {
+fn preview_table(
+    table_name: String,
+    limit: Option<u32>,
+    order_by: Option<String>,
+    order_dir: Option<String>,
+    filter_value: Option<String>,
+) -> Result<String, String> {
     spatia_engine::validate_table_name(&table_name).map_err(|e| e.to_string())?;
 
     let row_limit = limit.unwrap_or(100).min(1000);
@@ -832,6 +838,23 @@ fn preview_table(table_name: String, limit: Option<u32>) -> Result<String, Strin
     let schema =
         spatia_engine::table_schema(db_path(), &table_name).map_err(|e| e.to_string())?;
     let col_names: Vec<String> = schema.iter().map(|c| c.name.clone()).collect();
+
+    // Validate order_by column against known column names to prevent SQL injection
+    let validated_order_by: Option<&str> = if let Some(ref col) = order_by {
+        if col_names.iter().any(|c| c == col) {
+            Some(col.as_str())
+        } else {
+            return Err(format!("Unknown column: {col}"));
+        }
+    } else {
+        None
+    };
+
+    // Normalize sort direction — only "desc" is accepted; everything else → "ASC"
+    let order_dir_sql = match order_dir.as_deref() {
+        Some("desc") => "DESC",
+        _ => "ASC",
+    };
 
     // Query rows — cast every column to VARCHAR so non-string types (BIGINT,
     // DOUBLE, DATE, etc.) serialize correctly. The duckdb-rs driver returns Err
@@ -843,11 +866,46 @@ fn preview_table(table_name: String, limit: Option<u32>) -> Result<String, Strin
         .map(|c| format!(r#"CAST("{c}" AS VARCHAR) AS "{c}""#))
         .collect::<Vec<_>>()
         .join(", ");
+
+    // Build WHERE clause for full-text filter across all columns
+    let where_clause = if let Some(ref fv) = filter_value {
+        if fv.is_empty() {
+            String::new()
+        } else {
+            // Escape single-quotes in the filter value to prevent injection
+            let escaped = fv.replace('\'', "''");
+            let predicates = col_names
+                .iter()
+                .map(|c| format!(r#"CAST("{c}" AS VARCHAR) ILIKE '%{escaped}%'"#))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            format!("WHERE {predicates}")
+        }
+    } else {
+        String::new()
+    };
+
+    // Build ORDER BY clause
+    let order_clause = if let Some(col) = validated_order_by {
+        format!(r#"ORDER BY "{col}" {order_dir_sql}"#)
+    } else {
+        String::new()
+    };
+
+    // Get total count (respects filter but not LIMIT)
+    let count_sql = format!(
+        r#"SELECT COUNT(*) FROM "{table_name}" {where_clause}"#
+    );
+    let total: i64 = conn
+        .query_row(&count_sql, [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+
+    // Fetch page of rows
+    let select_sql = format!(
+        r#"SELECT {cast_select} FROM "{table_name}" {where_clause} {order_clause} LIMIT {row_limit}"#
+    );
     let mut stmt = conn
-        .prepare(&format!(
-            r#"SELECT {cast_select} FROM "{}" LIMIT {}"#,
-            table_name, row_limit
-        ))
+        .prepare(&select_sql)
         .map_err(|e| e.to_string())?;
 
     let mut rows_out: Vec<serde_json::Value> = Vec::new();
@@ -868,7 +926,7 @@ fn preview_table(table_name: String, limit: Option<u32>) -> Result<String, Strin
     let json = serde_json::json!({
         "columns": col_names,
         "rows": rows_out,
-        "total": rows_out.len(),
+        "total": total,
     });
     serde_json::to_string(&json).map_err(|e| e.to_string())
 }
