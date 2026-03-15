@@ -68,6 +68,15 @@ This prevents errors when column names conflict with DuckDB reserved words or co
 - ILIKE (case-insensitive LIKE), REGEXP_MATCHES(col, 'pattern')
 - CASE WHEN ... THEN ... ELSE ... END, COALESCE(col, default), NULLIF(col, value)
 
+## IMPORTANT: String functions only work on VARCHAR columns
+TRIM, UPPER, LOWER, REPLACE, etc. only accept VARCHAR arguments.
+If a column is already numeric (INTEGER, BIGINT, DOUBLE, etc.), do NOT wrap it in TRIM or other string functions.
+For numeric columns, use TRY_CAST directly without TRIM:
+  SET "col" = TRY_CAST("col" AS BIGINT)
+For VARCHAR columns that contain numeric data, cast to VARCHAR first:
+  SET "col" = TRY_CAST(NULLIF(TRIM(CAST("col" AS VARCHAR)), '') AS BIGINT)
+Always check the column type in the schema before choosing your approach.
+
 ## DuckDB list/array functions you may use
 - STRING_SPLIT(str, delimiter) — splits a string into a list
 - LIST_TRANSFORM(list, x -> expr) — apply a lambda to every element
